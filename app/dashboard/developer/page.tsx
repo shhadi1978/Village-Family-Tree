@@ -44,6 +44,7 @@ export default async function DeveloperPage() {
   }
 
   const superAdmin = isSuperAdmin(userId);
+  const configuredSuperAdmin = isConfiguredSuperAdmin(userId);
   const effectiveRole = superAdmin
     ? "Super Admin"
     : configuredSuperAdmin
@@ -51,7 +52,6 @@ export default async function DeveloperPage() {
       : "Family Admin / Viewer";
 
   const roleOverride = getDevRoleOverrideByCookie() || "SUPER_ADMIN";
-  const configuredSuperAdmin = isConfiguredSuperAdmin(userId);
 
   let dbStatus = "متصل";
   let dbOk = true;
