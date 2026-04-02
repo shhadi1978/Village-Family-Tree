@@ -44,6 +44,11 @@ export default async function DeveloperPage() {
   }
 
   const superAdmin = isSuperAdmin(userId);
+  const effectiveRole = superAdmin
+    ? "Super Admin"
+    : configuredSuperAdmin
+      ? "Family Admin (downgraded by dev override)"
+      : "Family Admin / Viewer";
 
   const roleOverride = getDevRoleOverrideByCookie() || "SUPER_ADMIN";
   const configuredSuperAdmin = isConfiguredSuperAdmin(userId);
@@ -110,6 +115,7 @@ export default async function DeveloperPage() {
           value={process.env.NODE_ENV === "production" ? "Production" : "Development"}
         />
         <StatusCard label="المشرف الأعلى" value={configuredSuperAdmin ? "مفعّل" : "غير مفعّل"} ok={configuredSuperAdmin} />
+        <StatusCard label="الرتبة الحالية" value={effectiveRole} ok={superAdmin} />
         <StatusCard label="الدور الحالي" value={roleOverride} />
         <StatusCard label="قاعدة البيانات" value={dbStatus} ok={dbOk} />
       </section>
