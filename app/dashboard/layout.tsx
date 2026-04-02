@@ -2,6 +2,7 @@ import { ReactNode } from "react";
 import { UserButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { BarChart3, Users, Home } from "lucide-react";
 import { isSuperAdmin } from "@/lib/authz";
 import * as familyService from "@/lib/services/family";
@@ -13,8 +14,21 @@ export const metadata = {
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const { userId } = await auth();
+
+  if (!userId) {
+    redirect("/sign-in");
+  }
+
   const superAdmin = isSuperAdmin(userId);
-  const userFamilies = userId ? await familyService.getUserFamilies(userId) : [];
+  let userFamilies: Array<{ familyId: string }> = [];
+
+  try {
+    userFamilies = await familyService.getUserFamilies(userId);
+  } catch (error) {
+    // Avoid crashing server rendering if DB is temporarily unavailable.
+    console.error("Dashboard layout failed to load user families:", error);
+  }
+
   const canManageAnyFamily = superAdmin || userFamilies.length > 0;
 
   return (
