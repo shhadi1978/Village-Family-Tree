@@ -43,9 +43,7 @@ export default async function DeveloperPage() {
     redirect("/sign-in");
   }
 
-  if (!isSuperAdmin(userId)) {
-    redirect("/dashboard");
-  }
+  const superAdmin = isSuperAdmin(userId);
 
   const roleOverride = getDevRoleOverrideByCookie() || "SUPER_ADMIN";
   const configuredSuperAdmin = isConfiguredSuperAdmin(userId);
@@ -95,6 +93,16 @@ export default async function DeveloperPage() {
           </div>
         </div>
       </section>
+
+      {!superAdmin && (
+        <section className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-amber-100">
+          <p className="font-semibold">وصول محدود</p>
+          <p className="mt-1 text-sm leading-6 text-amber-200">
+            هذه الصفحة متاحة لك للمتابعة والفحص فقط. لتفعيل صلاحيات المطور الكاملة أضف معرفك في متغير البيئة
+            SUPER_ADMIN_CLERK_IDS داخل Vercel ثم أعد النشر.
+          </p>
+        </section>
+      )}
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatusCard

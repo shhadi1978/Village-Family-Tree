@@ -72,15 +72,13 @@ export default async function DashboardLayout({ children }: { children: ReactNod
               <span>الأفراد</span>
             </Link>
           )}
-          {superAdmin && (
-            <Link
-              href="/dashboard/developer"
-              className="flex items-center justify-center gap-1 px-2 py-2 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition"
-            >
-              <Wrench className="w-4 h-4" />
-              <span>المطور</span>
-            </Link>
-          )}
+          <Link
+            href="/dashboard/developer"
+            className="flex items-center justify-center gap-1 px-2 py-2 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition"
+          >
+            <Wrench className="w-4 h-4" />
+            <span>المطور</span>
+          </Link>
         </nav>
       </header>
 
@@ -114,15 +112,13 @@ export default async function DashboardLayout({ children }: { children: ReactNod
               <span>الأفراد</span>
             </Link>
           )}
-          {superAdmin && (
-            <Link
-              href="/dashboard/developer"
-              className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition"
-            >
-              <Wrench className="w-5 h-5" />
-              <span>المطور</span>
-            </Link>
-          )}
+          <Link
+            href="/dashboard/developer"
+            className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition"
+          >
+            <Wrench className="w-5 h-5" />
+            <span>المطور</span>
+          </Link>
         </nav>
 
         <div className="border-t border-slate-700 pt-4">
