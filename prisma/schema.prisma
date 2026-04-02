@@ -1,0 +1,143 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enum for relationship types: Parent-child or spouse relationship
+enum RelationshipType {
+  PARENT // fromMemberId is parent, toMemberId is child
+  SPOUSE // bidirectional partnership
+}
+
+// Enum for member gender
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+// Village Model: The main umbrella containing all families
+model Village {
+  id            String    @id @default(cuid())
+  name          String    @unique
+  slug          String    @unique
+  description   String?
+  photoUrl      String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  families      Family[]
+  members       Member[]
+  relationships Relationship[]
+
+  @@index([slug])
+}
+
+// Family Model: A specific family within a village
+model Family {
+  id            String    @id @default(cuid())
+  name          String
+  slug          String
+  description   String?
+  photoUrl      String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Foreign Keys
+  villageId     String
+  village       Village   @relation(fields: [villageId], references: [id], onDelete: Cascade)
+
+  // Relations
+  members       Member[]
+
+  // Admin management
+  admins        FamilyAdmin[]
+
+  @@unique([villageId, slug])
+  @@index([villageId])
+}
+
+// Family Admin: Links users to families they manage
+model FamilyAdmin {
+  id            String    @id @default(cuid())
+  clerkId       String    // Clerk user ID
+  familyId      String
+  family        Family    @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  role          String    @default("admin") // "admin", "editor", etc.
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([clerkId, familyId])
+  @@index([familyId])
+  @@index([clerkId])
+}
+
+// Member Model: An individual in a family
+model Member {
+  id            String    @id @default(cuid())
+  firstName     String
+  lastName      String
+  nickname      String?
+  isFounder     Boolean   @default(false)
+  fullName      String    // Denormalized for search
+  gender        Gender
+  dateOfBirth   DateTime?
+  dateOfDeath   DateTime?
+  bio           String?
+  photoUrl      String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Foreign Keys
+  familyId      String
+  family        Family    @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  villageId     String
+  village       Village   @relation(fields: [villageId], references: [id], onDelete: Cascade)
+
+  // Relations - Relationships where this member is the "from"
+  relationshipsAsFrom     Relationship[] @relation("FromMember")
+
+  // Relationships where this member is the "to"
+  relationshipsAsTo       Relationship[] @relation("ToMember")
+
+  @@index([villageId])
+  @@index([familyId])
+  @@index([fullName])
+  @@index([nickname])
+  @@index([isFounder])
+}
+
+// Relationship Model: The core relationship connector
+// This is a DIRECTED graph connecting two members
+model Relationship {
+  id            String    @id @default(cuid())
+  type          RelationshipType
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Foreign Keys
+  fromMemberId  String
+  toMemberId    String
+  villageId     String
+
+  // Relations
+  fromMember    Member    @relation("FromMember", fields: [fromMemberId], references: [id], onDelete: Cascade)
+  toMember      Member    @relation("ToMember", fields: [toMemberId], references: [id], onDelete: Cascade)
+  village       Village   @relation(fields: [villageId], references: [id], onDelete: Cascade)
+
+  // Unique constraints to prevent duplicate relationships
+  // A member cannot have two PARENT relationships to the same child
+  // But can have multiple SPOUSE relationships (polygamy support)
+  @@unique([fromMemberId, toMemberId, type])
+  @@index([fromMemberId])
+  @@index([toMemberId])
+  @@index([villageId])
+}
