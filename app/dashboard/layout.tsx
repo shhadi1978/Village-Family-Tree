@@ -5,7 +5,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BarChart3, Users, Home } from "lucide-react";
 import { isSuperAdmin } from "@/lib/authz";
-import * as familyService from "@/lib/services/family";
 import DevRoleSwitcher from "@/components/DevRoleSwitcher";
 
 export const metadata = {
@@ -23,6 +22,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   let userFamilies: Array<{ familyId: string }> = [];
 
   try {
+    const familyService = await import("@/lib/services/family");
     userFamilies = await familyService.getUserFamilies(userId);
   } catch (error) {
     // Avoid crashing server rendering if DB is temporarily unavailable.
