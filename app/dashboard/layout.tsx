@@ -3,7 +3,7 @@ import { UserButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { BarChart3, Users, Home } from "lucide-react";
+import { BarChart3, Users, Home, Wrench } from "lucide-react";
 import { isSuperAdmin } from "@/lib/authz";
 import DevRoleSwitcher from "@/components/DevRoleSwitcher";
 
@@ -30,6 +30,13 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   }
 
   const canManageAnyFamily = superAdmin || userFamilies.length > 0;
+  const mobileNavCols = superAdmin
+    ? canManageAnyFamily
+      ? "grid-cols-4"
+      : "grid-cols-3"
+    : canManageAnyFamily
+      ? "grid-cols-3"
+      : "grid-cols-2";
 
   return (
     <div className="min-h-screen bg-slate-900">
@@ -41,7 +48,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         <div className="mt-3">
           <DevRoleSwitcher />
         </div>
-        <nav className={`mt-3 grid ${canManageAnyFamily ? "grid-cols-3" : "grid-cols-2"} gap-2 text-sm`}>
+        <nav className={`mt-3 grid ${mobileNavCols} gap-2 text-sm`}>
           <Link
             href="/dashboard"
             className="flex items-center justify-center gap-1 px-2 py-2 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition"
@@ -63,6 +70,15 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             >
               <Users className="w-4 h-4" />
               <span>الأفراد</span>
+            </Link>
+          )}
+          {superAdmin && (
+            <Link
+              href="/dashboard/developer"
+              className="flex items-center justify-center gap-1 px-2 py-2 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition"
+            >
+              <Wrench className="w-4 h-4" />
+              <span>المطور</span>
             </Link>
           )}
         </nav>
@@ -96,6 +112,15 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             >
               <Users className="w-5 h-5" />
               <span>الأفراد</span>
+            </Link>
+          )}
+          {superAdmin && (
+            <Link
+              href="/dashboard/developer"
+              className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition"
+            >
+              <Wrench className="w-5 h-5" />
+              <span>المطور</span>
             </Link>
           )}
         </nav>
