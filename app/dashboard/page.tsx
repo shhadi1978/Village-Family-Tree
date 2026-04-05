@@ -6,7 +6,7 @@ import { usePermissions } from "@/lib/hooks/use-permissions";
 import { formatNumberAr } from "@/lib/i18n/format";
 import { getMemberDisplayName } from "@/lib/member-display";
 import Link from "next/link";
-import { Plus, Users, Home, ArrowRight, Search } from "lucide-react";
+import { Plus, Users, Home, ArrowRight, Search, ChevronDown } from "lucide-react";
 
 type SearchFamily = {
   id: string;
@@ -120,122 +120,135 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8">
       {/* Global Search */}
-      <div className="bg-slate-800 rounded-lg border border-slate-700 p-5">
-        <label className="block text-sm text-slate-300 mb-2">بحث موحد (العائلات + الأفراد)</label>
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={globalSearch}
-            onChange={(e) => setGlobalSearch(e.target.value)}
-            placeholder="ابحث باسم العائلة أو الاسم الكامل للفرد..."
-            className="w-full pl-10 pr-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
-          />
-        </div>
+      <details className="group bg-slate-800 rounded-lg border border-slate-700 p-5">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+          <span className="text-sm font-medium text-slate-200">بحث موحد (العائلات + الأفراد)</span>
+          <ChevronDown className="h-4 w-4 text-slate-400 transition group-open:rotate-180" />
+        </summary>
 
-        {globalSearch.trim().length > 0 && (
-          <div className="mt-4 space-y-3">
-            {searchLoading ? (
-              <p className="text-slate-400 text-sm">جاري البحث...</p>
-            ) : searchError ? (
-              <p className="text-red-400 text-sm">{searchError}</p>
-            ) : (
-              <>
-                <div>
-                  <p className="text-sm text-slate-300 mb-2">
-                    العائلات ({formatNumberAr(familyResults.length)})
-                  </p>
-                  {familyResults.length > 0 ? (
-                    <div className="space-y-2">
-                      {familyResults.slice(0, 5).map((family) => (
-                        <Link
-                          key={family.id}
-                          href={`/dashboard/families/${family.id}`}
-                          className="block text-blue-400 hover:text-blue-300 text-sm"
-                        >
-                          {family.name} ({formatNumberAr(family._count?.members || 0)} فرد)
-                        </Link>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-slate-500 text-sm">لا توجد عائلات مطابقة.</p>
-                  )}
-                </div>
-
-                <div>
-                  <p className="text-sm text-slate-300 mb-2">
-                    الأفراد ({formatNumberAr(memberResults.length)})
-                  </p>
-                  {memberResults.length > 0 ? (
-                    <div className="space-y-2">
-                      {memberResults.slice(0, 7).map((member) => (
-                        <Link
-                          key={member.id}
-                          href={`/family/${member.familyId}?member=${member.id}`}
-                          className="block text-blue-400 hover:text-blue-300 text-sm"
-                        >
-                          {getMemberDisplayName(member)}
-                          {member.family?.name ? ` - ${member.family.name}` : ""}
-                        </Link>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-slate-500 text-sm">لا يوجد أفراد مطابقون.</p>
-                  )}
-                </div>
-              </>
-            )}
+        <div className="mt-4">
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={globalSearch}
+              onChange={(e) => setGlobalSearch(e.target.value)}
+              placeholder="ابحث باسم العائلة أو الاسم الكامل للفرد..."
+              className="w-full pl-10 pr-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
+            />
           </div>
-        )}
-      </div>
+
+          {globalSearch.trim().length > 0 && (
+            <div className="mt-4 space-y-3">
+              {searchLoading ? (
+                <p className="text-slate-400 text-sm">جاري البحث...</p>
+              ) : searchError ? (
+                <p className="text-red-400 text-sm">{searchError}</p>
+              ) : (
+                <>
+                  <div>
+                    <p className="text-sm text-slate-300 mb-2">
+                      العائلات ({formatNumberAr(familyResults.length)})
+                    </p>
+                    {familyResults.length > 0 ? (
+                      <div className="space-y-2">
+                        {familyResults.slice(0, 5).map((family) => (
+                          <Link
+                            key={family.id}
+                            href={`/dashboard/families/${family.id}`}
+                            className="block text-blue-400 hover:text-blue-300 text-sm"
+                          >
+                            {family.name} ({formatNumberAr(family._count?.members || 0)} فرد)
+                          </Link>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-slate-500 text-sm">لا توجد عائلات مطابقة.</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="text-sm text-slate-300 mb-2">
+                      الأفراد ({formatNumberAr(memberResults.length)})
+                    </p>
+                    {memberResults.length > 0 ? (
+                      <div className="space-y-2">
+                        {memberResults.slice(0, 7).map((member) => (
+                          <Link
+                            key={member.id}
+                            href={`/family/${member.familyId}?member=${member.id}`}
+                            className="block text-blue-400 hover:text-blue-300 text-sm"
+                          >
+                            {getMemberDisplayName(member)}
+                            {member.family?.name ? ` - ${member.family.name}` : ""}
+                          </Link>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-slate-500 text-sm">لا يوجد أفراد مطابقون.</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </details>
 
       {/* Header Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-blue-100 text-sm font-medium">إجمالي العائلات</p>
-              <p className="text-3xl font-bold mt-1">
-                {formatNumberAr(Array.isArray(families) ? families.length : 0)}
-              </p>
-            </div>
-            <Users className="w-12 h-12 opacity-50" />
-          </div>
-        </div>
+      <details className="group bg-slate-800 rounded-lg border border-slate-700 p-5">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+          <span className="text-sm font-medium text-slate-200">إحصائيات سريعة</span>
+          <ChevronDown className="h-4 w-4 text-slate-400 transition group-open:rotate-180" />
+        </summary>
 
-        <div className="bg-gradient-to-br from-purple-600 to-purple-700 rounded-lg p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-purple-100 text-sm font-medium">
-                إجمالي الأفراد
-              </p>
-              <p className="text-3xl font-bold mt-1">
-                {formatNumberAr(Array.isArray(families)
-                  ? families.reduce(
-                      (sum: number, f: any) => sum + (f._count?.members || 0),
-                      0
-                    )
-                  : 0)}
-              </p>
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg p-6 text-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-blue-100 text-sm font-medium">إجمالي العائلات</p>
+                <p className="text-3xl font-bold mt-1">
+                  {formatNumberAr(Array.isArray(families) ? families.length : 0)}
+                </p>
+              </div>
+              <Users className="w-12 h-12 opacity-50" />
             </div>
-            <Home className="w-12 h-12 opacity-50" />
           </div>
-        </div>
 
-        <div className="bg-gradient-to-br from-green-600 to-green-700 rounded-lg p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-green-100 text-sm font-medium">
-                {canManageAnyFamily ? "العائلات المُدارة" : "العائلات المتاحة"}
-              </p>
-              <p className="text-3xl font-bold mt-1">
-                {formatNumberAr(Array.isArray(families) ? families.length : 0)}
-              </p>
+          <div className="bg-gradient-to-br from-purple-600 to-purple-700 rounded-lg p-6 text-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-purple-100 text-sm font-medium">
+                  إجمالي الأفراد
+                </p>
+                <p className="text-3xl font-bold mt-1">
+                  {formatNumberAr(Array.isArray(families)
+                    ? families.reduce(
+                        (sum: number, f: any) => sum + (f._count?.members || 0),
+                        0
+                      )
+                    : 0)}
+                </p>
+              </div>
+              <Home className="w-12 h-12 opacity-50" />
             </div>
-            <Users className="w-12 h-12 opacity-50" />
+          </div>
+
+          <div className="bg-gradient-to-br from-green-600 to-green-700 rounded-lg p-6 text-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-green-100 text-sm font-medium">
+                  {canManageAnyFamily ? "العائلات المُدارة" : "العائلات المتاحة"}
+                </p>
+                <p className="text-3xl font-bold mt-1">
+                  {formatNumberAr(Array.isArray(families) ? families.length : 0)}
+                </p>
+              </div>
+              <Users className="w-12 h-12 opacity-50" />
+            </div>
           </div>
         </div>
-      </div>
+      </details>
 
       {/* Families List */}
       <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
