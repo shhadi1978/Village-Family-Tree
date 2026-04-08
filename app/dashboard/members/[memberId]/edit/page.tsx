@@ -79,6 +79,7 @@ export default function MemberEditPage() {
   const params = useParams();
   const router = useRouter();
   const memberId = params.memberId as string;
+
   const { getMember, getMembers } = useMembers();
   const { getRelationships, createRelationship, deleteRelationship } =
     useRelationships();
@@ -94,18 +95,21 @@ export default function MemberEditPage() {
   const [memberRelationships, setMemberRelationships] = useState<
     RelationshipRecord[]
   >([]);
+
   const [loading, setLoading] = useState(true);
   const [relationsLoading, setRelationsLoading] = useState(false);
   const [isSavingRelation, setIsSavingRelation] = useState(false);
   const [isDeletingRelation, setIsDeletingRelation] = useState(false);
   const [relationError, setRelationError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [relationshipIntent, setRelationshipIntent] = useState<RelationshipIntent>(
-    "FATHER"
-  );
+
+  const [relationshipIntent, setRelationshipIntent] =
+    useState<RelationshipIntent>("FATHER");
   const [selectedRelatedMemberId, setSelectedRelatedMemberId] = useState("");
-  // Change-parent inline state
-  const [changingParent, setChangingParent] = useState<"FATHER" | "MOTHER" | null>(null);
+
+  const [changingParent, setChangingParent] = useState<
+    "FATHER" | "MOTHER" | null
+  >(null);
   const [newParentId, setNewParentId] = useState("");
   const [isReplacingParent, setIsReplacingParent] = useState(false);
 
@@ -166,9 +170,7 @@ export default function MemberEditPage() {
       } catch (err) {
         console.error("Error loading relationships:", err);
         setRelationError(
-          err instanceof Error
-            ? err.message
-            : "تعذر تحميل علاقات الفرد"
+          err instanceof Error ? err.message : "تعذر تحميل علاقات الفرد"
         );
       } finally {
         setRelationsLoading(false);
@@ -200,7 +202,6 @@ export default function MemberEditPage() {
 
       if (relationshipIntent === "CHILD") {
         if (member.gender === "MALE") {
-          // Father's lineage must stay in the same family.
           return candidate.familyId === member.familyId;
         }
         return true;
@@ -231,7 +232,10 @@ export default function MemberEditPage() {
   const fatherCandidates = useMemo(() => {
     if (!member) return [];
     return villageMembers.filter(
-      (c) => c.id !== member.id && c.gender === "MALE" && c.familyId === member.familyId
+      (c) =>
+        c.id !== member.id &&
+        c.gender === "MALE" &&
+        c.familyId === member.familyId
     );
   }, [villageMembers, member]);
 
@@ -350,7 +354,6 @@ export default function MemberEditPage() {
 
     const existing = changingParent === "FATHER" ? currentFather : currentMother;
 
-    // Same parent selected — nothing to do
     if (existing && existing.fromMemberId === newParentId) {
       setRelationError("هذا الشخص هو الوالد الحالي بالفعل، لا يوجد تغيير.");
       return;
@@ -360,7 +363,6 @@ export default function MemberEditPage() {
     setRelationError(null);
 
     try {
-      // Replace mode: server deletes previous same-gender parent atomically.
       await createRelationship({
         fromMemberId: newParentId,
         toMemberId: member.id,
@@ -369,8 +371,10 @@ export default function MemberEditPage() {
         replaceExistingParent: true,
       });
 
-      // Refresh relationships
-      const refreshed = (await getRelationships(member.id)) as { from?: RelationshipRecord[]; to?: RelationshipRecord[] };
+      const refreshed = (await getRelationships(member.id)) as {
+        from?: RelationshipRecord[];
+        to?: RelationshipRecord[];
+      };
       const from = Array.isArray(refreshed?.from) ? refreshed.from : [];
       const to = Array.isArray(refreshed?.to) ? refreshed.to : [];
       setMemberRelationships([...from, ...to]);
@@ -384,9 +388,7 @@ export default function MemberEditPage() {
         msg.includes("already exists") ||
         msg.includes("P2002");
       setRelationError(
-        isDuplicate
-          ? "هذا الشخص مرتبط بالفعل كوالد لهذا الفرد."
-          : msg
+        isDuplicate ? "هذا الشخص مرتبط بالفعل كوالد لهذا الفرد." : msg
       );
     } finally {
       setIsReplacingParent(false);
@@ -408,9 +410,7 @@ export default function MemberEditPage() {
       );
     } catch (err) {
       console.error("Error deleting relationship:", err);
-      setRelationError(
-        err instanceof Error ? err.message : "تعذر حذف العلاقة"
-      );
+      setRelationError(err instanceof Error ? err.message : "تعذر حذف العلاقة");
     } finally {
       setIsDeletingRelation(false);
     }
@@ -449,278 +449,277 @@ export default function MemberEditPage() {
 
         <div className="bg-yellow-900 border border-yellow-700 rounded-lg p-4 text-yellow-200">
           لا تملك صلاحية تعديل هذا الفرد.
-            <div>
-              <h2 className="text-xl font-bold text-white">إدارة العلاقات (بشكل مبسط)</h2>
-              <p className="text-slate-400 text-sm mt-1">
-                اختر نوع الربط مباشرة ثم اختر الشخص، وسيتم إنشاء العلاقة تلقائياً.
-              </p>
-            </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !member) {
     return (
-            {/* ── Parents quick-change section ── */}
-            <div className="bg-slate-700/50 border border-slate-600 rounded-lg p-4 space-y-3">
-              <h3 className="text-white font-semibold text-sm">الوالدان</h3>
+      <div className="space-y-4">
+        <Link
+          href="/dashboard/families"
           className="text-blue-400 hover:text-blue-300 flex items-center gap-2"
-              {relationError && changingParent && (
-                <div className="bg-red-900 border border-red-700 rounded-lg p-3 text-red-200 text-sm">
-                  {relationError}
-                </div>
-              )}
+        >
+          <ArrowLeft className="w-4 h-4" />
+          رجوع
+        </Link>
+
         <div className="bg-red-900 border border-red-700 rounded-lg p-4 text-red-200">
-              {/* Father row */}
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs text-slate-400">الأب</p>
-                    <p className="text-sm text-white">
-                      {currentFather
-                        ? getMemberDisplayName(currentFather.fromMember)
-                        : <span className="text-slate-500 italic">غير محدد</span>}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setChangingParent(changingParent === "FATHER" ? null : "FATHER");
-                      setNewParentId("");
-                      setRelationError(null);
-                    }}
-                    className="text-xs px-3 py-1.5 bg-slate-600 hover:bg-slate-500 text-slate-200 rounded-lg transition"
-                  >
-                    {changingParent === "FATHER" ? "إلغاء" : "تغيير"}
-                  </button>
+          {error || "الفرد غير موجود"}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-3xl mx-auto">
+      <div className="mb-8">
+        <Link
           href={`/dashboard/families/${member.familyId}`}
-                {changingParent === "FATHER" && canCreateCurrentRelationship && (
-                  <div className="flex gap-2">
-                    <select
-                      value={newParentId}
-                      onChange={(e) => setNewParentId(e.target.value)}
-                      className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-                    >
-                      <option value="">اختر الأب الجديد...</option>
-                      {fatherCandidates.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {getMemberOptionLabel(c, fatherCandidates)}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={handleReplaceParent}
-                      disabled={!newParentId || isReplacingParent}
-                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm rounded-lg transition"
-                    >
-                      {isReplacingParent ? "..." : "حفظ"}
-                    </button>
-                  </div>
-                )}
-              </div>
-            <div className="flex items-center justify-between gap-3">
-              {/* Mother row */}
-              <div className="flex flex-col gap-2 pt-2 border-t border-slate-600">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs text-slate-400">الأم</p>
-                    <p className="text-sm text-white">
-                      {currentMother
-                        ? getMemberDisplayName(currentMother.fromMember)
-                        : <span className="text-slate-500 italic">غير محددة</span>}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setChangingParent(changingParent === "MOTHER" ? null : "MOTHER");
-                      setNewParentId("");
-                      setRelationError(null);
-                    }}
-                    className="text-xs px-3 py-1.5 bg-slate-600 hover:bg-slate-500 text-slate-200 rounded-lg transition"
-                  >
-                    {changingParent === "MOTHER" ? "إلغاء" : "تغيير"}
-                  </button>
-                </div>
-                {changingParent === "MOTHER" && canCreateCurrentRelationship && (
-                  <div className="flex gap-2">
-                    <select
-                      value={newParentId}
-                      onChange={(e) => setNewParentId(e.target.value)}
-                      className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-                    >
-                      <option value="">اختر الأم الجديدة...</option>
-                      {motherCandidates.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {getMemberOptionLabel(c, motherCandidates)}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={handleReplaceParent}
-                      disabled={!newParentId || isReplacingParent}
-                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm rounded-lg transition"
-                    >
-                      {isReplacingParent ? "..." : "حفظ"}
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          {/* Mother row */}
-            {relationError && (
+          className="text-blue-400 hover:text-blue-300 flex items-center gap-2 mb-4"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          العودة إلى العائلة
+        </Link>
+
+        <h1 className="text-2xl md:text-3xl font-bold text-white">تعديل بيانات الفرد</h1>
+        <p className="text-slate-400 mt-2">قم بتحديث بيانات {getMemberDisplayName(member)}</p>
+      </div>
+
+      <MemberForm
+        memberId={member.id}
+        familyId={member.familyId}
+        villageId={member.villageId}
+        initialData={initialData}
+        onSuccess={() => router.push(`/dashboard/families/${member.familyId}`)}
+        onCancel={() => router.back()}
+      />
+
+      {(canCreateCurrentRelationship || canDeleteCurrentRelationship) && (
+        <div className="mt-8 bg-slate-800 border border-slate-700 rounded-lg p-5 space-y-4">
+          <div>
+            <h2 className="text-xl font-bold text-white">إدارة العلاقات (بشكل مبسط)</h2>
+            <p className="text-slate-400 text-sm mt-1">
+              اختر نوع الربط مباشرة ثم اختر الشخص، وسيتم إنشاء العلاقة تلقائياً.
+            </p>
+          </div>
+
+          <div className="bg-slate-700/50 border border-slate-600 rounded-lg p-4 space-y-3">
+            <h3 className="text-white font-semibold text-sm">الوالدان</h3>
+
+            {relationError && changingParent && (
               <div className="bg-red-900 border border-red-700 rounded-lg p-3 text-red-200 text-sm">
                 {relationError}
               </div>
             )}
-                  {currentMother
-            {canCreateCurrentRelationship && (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm text-slate-300 mb-1">نوع الربط المطلوب</label>
-                    <select
-                      value={relationshipIntent}
-                      onChange={(e) => {
-                        setRelationshipIntent(e.target.value as RelationshipIntent);
-                        setSelectedRelatedMemberId("");
-                      }}
-                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
-                    >
-                      <option value="FATHER">ربط أب لهذا الفرد</option>
-                      <option value="MOTHER">ربط أم لهذا الفرد</option>
-                      <option value="CHILD">ربط ابن/ابنة لهذا الفرد</option>
-                      <option value="SPOUSE">ربط زوج/زوجة لهذا الفرد</option>
-                    </select>
-                  </div>
 
-                  <div>
-                    <label className="block text-sm text-slate-300 mb-1">اختر الشخص</label>
-                    <select
-                      value={selectedRelatedMemberId}
-                      onChange={(e) => setSelectedRelatedMemberId(e.target.value)}
-                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
-                    >
-                      <option value="">اختر فرداً</option>
-                      {availableRelatedMembers.map((candidate) => (
-                        <option key={candidate.id} value={candidate.id}>
-                          {getMemberOptionLabel(candidate, availableRelatedMembers)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs text-slate-400">الأب</p>
+                  <p className="text-sm text-white">
+                    {currentFather
+                      ? getMemberDisplayName(currentFather.fromMember)
+                      : <span className="text-slate-500 italic">غير محدد</span>}
+                  </p>
                 </div>
-
-                <div className="bg-slate-700/60 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200">
-                  {relationshipPreviewText}
-                </div>
-
                 <button
                   type="button"
-                  onClick={handleCreateRelationship}
-                  disabled={isSavingRelation || !selectedRelatedMemberId}
-                  className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg transition"
+                  onClick={() => {
+                    setChangingParent(changingParent === "FATHER" ? null : "FATHER");
+                    setNewParentId("");
+                    setRelationError(null);
+                  }}
+                  className="text-xs px-3 py-1.5 bg-slate-600 hover:bg-slate-500 text-slate-200 rounded-lg transition"
                 >
-                  <Plus className="w-4 h-4" />
-                  {isSavingRelation ? "جاري الإضافة..." : "إضافة العلاقة"}
+                  {changingParent === "FATHER" ? "إلغاء" : "تغيير"}
                 </button>
-              </>
-            )}
+              </div>
 
-            <div className="pt-2 border-t border-slate-700">
-              <h3 className="text-white font-semibold mb-3">العلاقات الحالية</h3>
-
-              {relationsLoading ? (
-                <p className="text-slate-400 text-sm">جاري تحميل العلاقات...</p>
-              ) : memberRelationships.length === 0 ? (
-                <p className="text-slate-400 text-sm">لا توجد علاقات مسجلة بعد.</p>
-              ) : (
-                <div className="space-y-2">
-                  {memberRelationships.map((relationship) => {
-                    const relatedMember =
-                      relationship.fromMemberId === member.id
-                        ? relationship.toMember
-                        : relationship.fromMember;
-
-                    return (
-                      <div
-                        key={relationship.id}
-                        className="flex items-center justify-between gap-3 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2"
-                      >
-                        <div>
-                          <p className="text-white text-sm font-medium">
-                            {getRelationshipLabel(relationship, member.id)}
-                          </p>
-                          <p className="text-slate-300 text-sm">
-                            {getMemberDisplayName(relatedMember)}
-                          </p>
-                        </div>
-
-                        {canDeleteCurrentRelationship && (
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteRelationship(relationship.id)}
-                            disabled={isDeletingRelation}
-                            className="p-2 text-slate-300 hover:text-red-400 hover:bg-slate-600 rounded transition"
-                            title="حذف العلاقة"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
+              {changingParent === "FATHER" && canCreateCurrentRelationship && (
+                <div className="flex gap-2">
+                  <select
+                    value={newParentId}
+                    onChange={(e) => setNewParentId(e.target.value)}
+                    className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
+                  >
+                    <option value="">اختر الأب الجديد...</option>
+                    {fatherCandidates.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {getMemberOptionLabel(candidate, fatherCandidates)}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleReplaceParent}
+                    disabled={!newParentId || isReplacingParent}
+                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm rounded-lg transition"
+                  >
+                    {isReplacingParent ? "..." : "حفظ"}
+                  </button>
                 </div>
               )}
-            {changingParent === "MOTHER" && (
-                  disabled={!newParentId || isReplacingParent}
-          </div>
-          <Plus className="w-4 h-4" />
-          {isSavingRelation ? "جاري الإضافة..." : "إضافة العلاقة"}
-        </button>
+            </div>
 
-        <div className="pt-2 border-t border-slate-700">
-          <h3 className="text-white font-semibold mb-3">العلاقات الحالية</h3>
+            <div className="flex flex-col gap-2 pt-2 border-t border-slate-600">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs text-slate-400">الأم</p>
+                  <p className="text-sm text-white">
+                    {currentMother
+                      ? getMemberDisplayName(currentMother.fromMember)
+                      : <span className="text-slate-500 italic">غير محددة</span>}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setChangingParent(changingParent === "MOTHER" ? null : "MOTHER");
+                    setNewParentId("");
+                    setRelationError(null);
+                  }}
+                  className="text-xs px-3 py-1.5 bg-slate-600 hover:bg-slate-500 text-slate-200 rounded-lg transition"
+                >
+                  {changingParent === "MOTHER" ? "إلغاء" : "تغيير"}
+                </button>
+              </div>
 
-          {relationsLoading ? (
-            <p className="text-slate-400 text-sm">جاري تحميل العلاقات...</p>
-          ) : memberRelationships.length === 0 ? (
-            <p className="text-slate-400 text-sm">لا توجد علاقات مسجلة بعد.</p>
-          ) : (
-            <div className="space-y-2">
-              {memberRelationships.map((relationship) => {
-                const relatedMember =
-                  relationship.fromMemberId === member.id
-                    ? relationship.toMember
-                    : relationship.fromMember;
-
-                return (
-                  <div
-                    key={relationship.id}
-                    className="flex items-center justify-between gap-3 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2"
+              {changingParent === "MOTHER" && canCreateCurrentRelationship && (
+                <div className="flex gap-2">
+                  <select
+                    value={newParentId}
+                    onChange={(e) => setNewParentId(e.target.value)}
+                    className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
                   >
-                    <div>
-                      <p className="text-white text-sm font-medium">
-                        {getRelationshipLabel(relationship, member.id)}
-                      </p>
-                      <p className="text-slate-300 text-sm">
-                        {getMemberDisplayName(relatedMember)}
-                      </p>
-                    </div>
+                    <option value="">اختر الأم الجديدة...</option>
+                    {motherCandidates.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {getMemberOptionLabel(candidate, motherCandidates)}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleReplaceParent}
+                    disabled={!newParentId || isReplacingParent}
+                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm rounded-lg transition"
+                  >
+                    {isReplacingParent ? "..." : "حفظ"}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteRelationship(relationship.id)}
-                      disabled={isDeletingRelation}
-                      className="p-2 text-slate-300 hover:text-red-400 hover:bg-slate-600 rounded transition"
-                      title="حذف العلاقة"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                );
-              })}
+          {relationError && (
+            <div className="bg-red-900 border border-red-700 rounded-lg p-3 text-red-200 text-sm">
+              {relationError}
             </div>
           )}
+
+          {canCreateCurrentRelationship && (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-slate-300 mb-1">نوع الربط المطلوب</label>
+                  <select
+                    value={relationshipIntent}
+                    onChange={(e) => {
+                      setRelationshipIntent(e.target.value as RelationshipIntent);
+                      setSelectedRelatedMemberId("");
+                    }}
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
+                  >
+                    <option value="FATHER">ربط أب لهذا الفرد</option>
+                    <option value="MOTHER">ربط أم لهذا الفرد</option>
+                    <option value="CHILD">ربط ابن/ابنة لهذا الفرد</option>
+                    <option value="SPOUSE">ربط زوج/زوجة لهذا الفرد</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-slate-300 mb-1">اختر الشخص</label>
+                  <select
+                    value={selectedRelatedMemberId}
+                    onChange={(e) => setSelectedRelatedMemberId(e.target.value)}
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
+                  >
+                    <option value="">اختر فرداً</option>
+                    {availableRelatedMembers.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {getMemberOptionLabel(candidate, availableRelatedMembers)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="bg-slate-700/60 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200">
+                {relationshipPreviewText}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCreateRelationship}
+                disabled={isSavingRelation || !selectedRelatedMemberId}
+                className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg transition"
+              >
+                <Plus className="w-4 h-4" />
+                {isSavingRelation ? "جاري الإضافة..." : "إضافة العلاقة"}
+              </button>
+            </>
+          )}
+
+          <div className="pt-2 border-t border-slate-700">
+            <h3 className="text-white font-semibold mb-3">العلاقات الحالية</h3>
+
+            {relationsLoading ? (
+              <p className="text-slate-400 text-sm">جاري تحميل العلاقات...</p>
+            ) : memberRelationships.length === 0 ? (
+              <p className="text-slate-400 text-sm">لا توجد علاقات مسجلة بعد.</p>
+            ) : (
+              <div className="space-y-2">
+                {memberRelationships.map((relationship) => {
+                  const relatedMember =
+                    relationship.fromMemberId === member.id
+                      ? relationship.toMember
+                      : relationship.fromMember;
+
+                  return (
+                    <div
+                      key={relationship.id}
+                      className="flex items-center justify-between gap-3 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2"
+                    >
+                      <div>
+                        <p className="text-white text-sm font-medium">
+                          {getRelationshipLabel(relationship, member.id)}
+                        </p>
+                        <p className="text-slate-300 text-sm">
+                          {getMemberDisplayName(relatedMember)}
+                        </p>
+                      </div>
+
+                      {canDeleteCurrentRelationship && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRelationship(relationship.id)}
+                          disabled={isDeletingRelation}
+                          className="p-2 text-slate-300 hover:text-red-400 hover:bg-slate-600 rounded transition"
+                          title="حذف العلاقة"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
