@@ -3,7 +3,14 @@ export function formatNumberAr(value: number): string {
 }
 
 export function formatDateAr(value: string | Date): string {
-  return new Date(value).toLocaleDateString("ar-EG");
+  const date = new Date(value);
+  
+  // Format as dd/mm/yyyy with Latin numerals
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  
+  return `${day}/${month}/${year}`;
 }
 
 export function genderLabelAr(value?: string | null): string {

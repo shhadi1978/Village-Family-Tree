@@ -26,10 +26,6 @@ export function isConfiguredSuperAdmin(userId?: string | null): boolean {
 }
 
 export function isDevSuperAdminDisabledByCookie(): boolean {
-  if (process.env.NODE_ENV === "production") {
-    return false;
-  }
-
   try {
     const cookieStore = cookies();
     const disabledValue = cookieStore.get(DEV_SUPER_ADMIN_DISABLED_COOKIE)?.value;
@@ -40,10 +36,6 @@ export function isDevSuperAdminDisabledByCookie(): boolean {
 }
 
 export function getDevRoleOverrideByCookie(): DevRoleOverride | null {
-  if (process.env.NODE_ENV === "production") {
-    return null;
-  }
-
   try {
     const cookieStore = cookies();
     const mode = cookieStore.get(DEV_ROLE_OVERRIDE_COOKIE)?.value;
@@ -65,10 +57,6 @@ export function getDevRoleOverrideByCookie(): DevRoleOverride | null {
 }
 
 export function getDevRoleScopeFamilyIdByCookie(): string | null {
-  if (process.env.NODE_ENV === "production") {
-    return null;
-  }
-
   try {
     const cookieStore = cookies();
     const familyId = cookieStore.get(DEV_ROLE_SCOPE_FAMILY_COOKIE)?.value?.trim();

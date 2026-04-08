@@ -189,7 +189,7 @@ export default function DevRoleSwitcher() {
     return null;
   }
 
-  if (!state?.isDev || !state?.isConfiguredSuperAdmin) {
+  if (!state?.isConfiguredSuperAdmin) {
     return null;
   }
 

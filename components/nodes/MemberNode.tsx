@@ -2,7 +2,7 @@
 
 import { Handle, Position } from "reactflow";
 import { User } from "lucide-react";
-import { genderLabelAr } from "@/lib/i18n/format";
+import { genderLabelAr, formatDateAr } from "@/lib/i18n/format";
 import { getMemberDisplayName } from "@/lib/member-display";
 import { isFamilyFounder } from "@/lib/member-founder";
 
@@ -91,13 +91,13 @@ export default function MemberNode({ data }: MemberNodeProps) {
 
         {member.dateOfBirth && (
           <p className="text-center">
-            م. {new Date(member.dateOfBirth).toLocaleDateString("ar-EG")}
+            م. {formatDateAr(member.dateOfBirth)}
           </p>
         )}
 
         {member.dateOfDeath && (
           <p className="text-center text-red-400">
-            و. {new Date(member.dateOfDeath).toLocaleDateString("ar-EG")}
+            و. {formatDateAr(member.dateOfDeath)}
           </p>
         )}
       </div>

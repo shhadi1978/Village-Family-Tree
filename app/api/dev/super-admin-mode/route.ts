@@ -14,10 +14,6 @@ import {
 
 export const runtime = "nodejs";
 
-function isDevMode(): boolean {
-  return process.env.NODE_ENV !== "production";
-}
-
 /**
  * GET /api/dev/super-admin-mode
  * Returns current dev override status for super admin role.
@@ -36,7 +32,7 @@ export async function GET() {
     return NextResponse.json(
       {
         data: {
-          isDev: isDevMode(),
+          isDev: process.env.NODE_ENV !== "production",
           isConfiguredSuperAdmin: configuredSuperAdmin,
           roleMode,
           scopeFamilyId: getDevRoleScopeFamilyIdByCookie(),
@@ -68,13 +64,6 @@ export async function POST(req: NextRequest) {
 
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    if (!isDevMode()) {
-      return NextResponse.json(
-        { error: "Dev Role Switcher is disabled in production" },
-        { status: 403 }
-      );
     }
 
     if (!isConfiguredSuperAdmin(userId)) {
@@ -118,7 +107,7 @@ export async function POST(req: NextRequest) {
     const response = NextResponse.json(
       {
         data: {
-          isDev: true,
+          isDev: process.env.NODE_ENV !== "production",
           isConfiguredSuperAdmin: true,
           roleMode,
           scopeFamilyId: requiresScopedFamily ? scopeFamilyId : null,
