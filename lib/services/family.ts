@@ -302,6 +302,56 @@ export async function removeFamilyAdmin(familyId: string, clerkId: string) {
 }
 
 /**
+ * Update an admin role in a family
+ */
+export async function updateFamilyAdminRole(
+  familyId: string,
+  clerkId: string,
+  role: string
+) {
+  return db.familyAdmin.update({
+    where: {
+      clerkId_familyId: {
+        clerkId,
+        familyId,
+      },
+    },
+    data: {
+      role,
+      updatedAt: new Date(),
+    },
+  });
+}
+
+/**
+ * Get all family admin mappings for a user
+ */
+export async function getUserFamilyAdminMappings(clerkId: string) {
+  return db.familyAdmin.findMany({
+    where: { clerkId },
+    include: {
+      family: {
+        include: {
+          village: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: [
+      {
+        family: {
+          name: "asc",
+        },
+      },
+    ],
+  });
+}
+
+/**
  * Get user's families (families they administer)
  */
 export async function getUserFamilies(clerkId: string) {

@@ -3,7 +3,7 @@ import { UserButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { BarChart3, Users, Home, Wrench } from "lucide-react";
+import { BarChart3, Users, Home, Wrench, UserCog } from "lucide-react";
 import { isSuperAdmin } from "@/lib/authz";
 import DevRoleSwitcher from "@/components/DevRoleSwitcher";
 
@@ -32,8 +32,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const canManageAnyFamily = superAdmin || userFamilies.length > 0;
   const mobileNavCols = superAdmin
     ? canManageAnyFamily
-      ? "grid-cols-4"
-      : "grid-cols-3"
+      ? "grid-cols-5"
+      : "grid-cols-4"
     : canManageAnyFamily
       ? "grid-cols-3"
       : "grid-cols-2";
@@ -70,6 +70,15 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             >
               <Users className="w-4 h-4" />
               <span>الأفراد</span>
+            </Link>
+          )}
+          {superAdmin && (
+            <Link
+              href="/dashboard/users"
+              className="flex items-center justify-center gap-1 px-2 py-2 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition"
+            >
+              <UserCog className="w-4 h-4" />
+              <span>المستخدمون</span>
             </Link>
           )}
           <Link
@@ -110,6 +119,15 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             >
               <Users className="w-5 h-5" />
               <span>الأفراد</span>
+            </Link>
+          )}
+          {superAdmin && (
+            <Link
+              href="/dashboard/users"
+              className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition"
+            >
+              <UserCog className="w-5 h-5" />
+              <span>المستخدمون</span>
             </Link>
           )}
           <Link

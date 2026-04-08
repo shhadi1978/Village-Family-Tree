@@ -168,3 +168,63 @@ export async function DELETE(
     );
   }
 }
+
+/**
+ * PATCH /api/families/[familyId]/admins
+ * Update an admin role
+ * Super Admin only
+ * Body: { clerkId: string, role: string }
+ */
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { familyId: string } }
+) {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    if (!isSuperAdmin(userId)) {
+      return NextResponse.json(
+        { error: "Forbidden: Super Admin only" },
+        { status: 403 }
+      );
+    }
+
+    const body = await req.json();
+    const clerkId = typeof body?.clerkId === "string" ? body.clerkId.trim() : "";
+    const role = typeof body?.role === "string" ? body.role.trim() : "";
+
+    if (!clerkId || !role) {
+      return NextResponse.json(
+        { error: "clerkId and role are required" },
+        { status: 400 }
+      );
+    }
+
+    const updated = await familyService.updateFamilyAdminRole(
+      params.familyId,
+      clerkId,
+      role
+    );
+
+    return NextResponse.json({ data: updated }, { status: 200 });
+  } catch (error: any) {
+    console.error("Error updating family admin role:", error);
+    if (error?.code === "P2025") {
+      return NextResponse.json(
+        { error: "Family admin mapping not found" },
+        { status: 404 }
+      );
+    }
+    return NextResponse.json(
+      { error: "Failed to update family admin role" },
+      { status: 500 }
+    );
+  }
+}
