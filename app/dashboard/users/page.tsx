@@ -44,7 +44,12 @@ const roleOptions = [
   { value: "admin", label: "مدير" },
   { value: "editor", label: "محرر" },
   { value: "viewer", label: "مشاهد" },
+  { value: "all_families_admin", label: "مدير كل العائلات في القرية" },
 ];
+
+function getRoleLabel(role: string) {
+  return roleOptions.find((item) => item.value === role)?.label || role;
+}
 
 export default function UsersManagementPage() {
   const router = useRouter();
@@ -59,7 +64,7 @@ export default function UsersManagementPage() {
   const [adminUsersLoading, setAdminUsersLoading] = useState(false);
   const [families, setFamilies] = useState<FamilyItem[]>([]);
   const [familiesLoading, setFamiliesLoading] = useState(false);
-  const [selectedFamilyId, setSelectedFamilyId] = useState("");
+  const [selectedFamilyIds, setSelectedFamilyIds] = useState<string[]>([]);
   const [selectedRole, setSelectedRole] = useState("admin");
   const [mappings, setMappings] = useState<UserAdminMapping[]>([]);
   const [mappingsLoading, setMappingsLoading] = useState(false);
@@ -67,6 +72,7 @@ export default function UsersManagementPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [assignmentRoleFilter, setAssignmentRoleFilter] = useState("ALL");
   const [assignmentFamilyFilter, setAssignmentFamilyFilter] = useState("ALL");
+  const [assignAllFamiliesInVillage, setAssignAllFamiliesInVillage] = useState(false);
 
   useEffect(() => {
     const currentVillageId = localStorage.getItem("selectedVillageId");
@@ -258,6 +264,11 @@ export default function UsersManagementPage() {
     [families, assignedFamilyIds]
   );
 
+  const hasVillageWideAccess = useMemo(
+    () => mappings.some((item) => item.role === "all_families_admin"),
+    [mappings]
+  );
+
   const visibleMappings = useMemo(() => {
     return mappings.filter((mapping) => {
       if (assignmentRoleFilter !== "ALL" && mapping.role !== assignmentRoleFilter) {
@@ -278,31 +289,78 @@ export default function UsersManagementPage() {
       return;
     }
 
-    if (!selectedFamilyId) {
-      setMessage("اختر عائلة لإضافة الصلاحية");
+    const isVillageWide = selectedRole === "all_families_admin" || assignAllFamiliesInVillage;
+
+    if (isVillageWide && hasVillageWideAccess) {
+      setMessage("هذا المستخدم لديه بالفعل صلاحية كل العائلات في القرية");
+      return;
+    }
+
+    if (!isVillageWide && selectedFamilyIds.length === 0) {
+      setMessage("اختر عائلة واحدة على الأقل لإضافة الصلاحية");
       return;
     }
 
     try {
       setActionLoading(true);
       setMessage(null);
-      const response = await fetch(`/api/families/${selectedFamilyId}/admins`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clerkId: selectedUser.clerkId,
-          role: selectedRole,
-        }),
-      });
-      const payload = await response.json();
+      if (isVillageWide) {
+        const anchorFamilyId = families[0]?.id;
+        if (!anchorFamilyId) {
+          throw new Error("لا توجد عائلات داخل القرية لتفعيل هذه الصلاحية");
+        }
 
-      if (!response.ok) {
-        throw new Error(payload?.error || "تعذر إضافة الصلاحية");
+        const response = await fetch(`/api/families/${anchorFamilyId}/admins`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clerkId: selectedUser.clerkId,
+            role: "all_families_admin",
+          }),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload?.error || "تعذر إضافة صلاحية كل العائلات");
+        }
+
+        setMessage("تم منح المستخدم صلاحية كل العائلات في القرية");
+      } else {
+        let successCount = 0;
+        const errors: string[] = [];
+
+        for (const familyId of selectedFamilyIds) {
+          const response = await fetch(`/api/families/${familyId}/admins`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              clerkId: selectedUser.clerkId,
+              role: selectedRole,
+            }),
+          });
+          const payload = await response.json();
+
+          if (!response.ok) {
+            errors.push(payload?.error || `تعذر إضافة الصلاحية إلى العائلة ${familyId}`);
+          } else {
+            successCount += 1;
+          }
+        }
+
+        if (successCount === 0 && errors.length > 0) {
+          throw new Error(errors[0]);
+        }
+
+        setMessage(
+          errors.length > 0
+            ? `تمت إضافة الصلاحية إلى ${successCount} عائلة مع وجود بعض الإخفاقات: ${errors[0]}`
+            : `تمت إضافة الصلاحية إلى ${successCount} عائلة بنجاح`
+        );
       }
 
-      setSelectedFamilyId("");
+      setSelectedFamilyIds([]);
       setSelectedRole("admin");
-      setMessage("تمت إضافة الصلاحية بنجاح");
+      setAssignAllFamiliesInVillage(false);
 
       const refreshed = await fetch(
         `/api/users/${encodeURIComponent(selectedUser.clerkId)}/family-admins${villageId ? `?villageId=${encodeURIComponent(villageId)}` : ""}`
@@ -553,27 +611,70 @@ export default function UsersManagementPage() {
             <div className="space-y-6">
               <div className="grid gap-3 md:grid-cols-[1.3fr_0.7fr_auto]">
                 <div>
-                  <label className="mb-2 block text-sm text-slate-300">العائلة</label>
-                  <select
-                    value={selectedFamilyId}
-                    onChange={(event) => setSelectedFamilyId(event.target.value)}
-                    className="w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-white outline-none focus:border-blue-500"
-                    disabled={familiesLoading || actionLoading}
-                  >
-                    <option value="">اختر عائلة لإضافة الصلاحية</option>
-                    {availableFamilies.map((family) => (
-                      <option key={family.id} value={family.id}>
-                        {family.name}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="mb-2 block text-sm text-slate-300">العائلات</label>
+                  <div className="rounded-lg border border-slate-600 bg-slate-700 p-3">
+                    <label className="mb-3 flex items-center gap-2 text-sm text-white">
+                      <input
+                        type="checkbox"
+                        checked={assignAllFamiliesInVillage || selectedRole === "all_families_admin"}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setAssignAllFamiliesInVillage(checked);
+                          if (checked) {
+                            setSelectedRole("all_families_admin");
+                            setSelectedFamilyIds([]);
+                          } else if (selectedRole === "all_families_admin") {
+                            setSelectedRole("admin");
+                          }
+                        }}
+                        disabled={actionLoading || familiesLoading || hasVillageWideAccess}
+                      />
+                      منح صلاحية كل العائلات في القرية
+                    </label>
+
+                    {!assignAllFamiliesInVillage && selectedRole !== "all_families_admin" && (
+                      <div className="max-h-40 space-y-2 overflow-y-auto pr-1">
+                        {availableFamilies.length === 0 ? (
+                          <p className="text-sm text-slate-300">لا توجد عائلات متاحة لهذا المستخدم داخل القرية.</p>
+                        ) : (
+                          availableFamilies.map((family) => (
+                            <label key={family.id} className="flex items-center gap-2 text-sm text-white">
+                              <input
+                                type="checkbox"
+                                checked={selectedFamilyIds.includes(family.id)}
+                                onChange={(event) => {
+                                  const checked = event.target.checked;
+                                  setSelectedFamilyIds((prev) =>
+                                    checked
+                                      ? [...prev, family.id]
+                                      : prev.filter((item) => item !== family.id)
+                                  );
+                                }}
+                                disabled={actionLoading}
+                              />
+                              {family.name}
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div>
                   <label className="mb-2 block text-sm text-slate-300">الدور</label>
                   <select
                     value={selectedRole}
-                    onChange={(event) => setSelectedRole(event.target.value)}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setSelectedRole(value);
+                      if (value === "all_families_admin") {
+                        setAssignAllFamiliesInVillage(true);
+                        setSelectedFamilyIds([]);
+                      } else {
+                        setAssignAllFamiliesInVillage(false);
+                      }
+                    }}
                     className="w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-white outline-none focus:border-blue-500"
                     disabled={actionLoading}
                   >
@@ -589,7 +690,12 @@ export default function UsersManagementPage() {
                   <button
                     type="button"
                     onClick={handleAssign}
-                    disabled={actionLoading || !selectedFamilyId}
+                    disabled={
+                      actionLoading ||
+                      (!assignAllFamiliesInVillage &&
+                        selectedRole !== "all_families_admin" &&
+                        selectedFamilyIds.length === 0)
+                    }
                     className="w-full rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-900/50"
                   >
                     {actionLoading ? "جاري الحفظ..." : "إضافة صلاحية"}
@@ -668,6 +774,11 @@ export default function UsersManagementPage() {
                             <p className="font-semibold text-white">{mapping.family?.name || "عائلة غير معروفة"}</p>
                             <p className="text-sm text-slate-400">
                               {mapping.family?.village?.name || "قرية غير معروفة"}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-300">
+                              {mapping.role === "all_families_admin"
+                                ? "هذه الصلاحية تمنح المستخدم إدارة كل العائلات في هذه القرية"
+                                : `الدور: ${getRoleLabel(mapping.role)}`}
                             </p>
                           </div>
 

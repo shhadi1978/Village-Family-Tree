@@ -48,6 +48,14 @@ type SearchableUser = {
   imageUrl?: string;
 };
 
+function getAdminRoleLabel(role: string): string {
+  if (role === "admin") return "مدير";
+  if (role === "editor") return "محرر";
+  if (role === "viewer") return "مشاهد";
+  if (role === "all_families_admin") return "مدير كل العائلات في القرية";
+  return role;
+}
+
 type MemberRelationshipsResponse = {
   from?: RelationshipRecord[];
   to?: RelationshipRecord[];
@@ -979,8 +987,10 @@ export default function FamilyDetailsPage() {
                 onChange={(e) => setNewAdminRole(e.target.value)}
                 className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
               >
-                <option value="admin">admin</option>
-                <option value="editor">editor</option>
+                <option value="admin">مدير</option>
+                <option value="editor">محرر</option>
+                <option value="viewer">مشاهد</option>
+                <option value="all_families_admin">مدير كل العائلات في القرية</option>
               </select>
             </div>
           </div>
@@ -1010,7 +1020,7 @@ export default function FamilyDetailsPage() {
                   >
                     <div>
                       <p className="text-white text-sm font-medium">{admin.clerkId}</p>
-                      <p className="text-slate-300 text-xs">role: {admin.role}</p>
+                      <p className="text-slate-300 text-xs">الدور: {getAdminRoleLabel(admin.role)}</p>
                     </div>
 
                     <button

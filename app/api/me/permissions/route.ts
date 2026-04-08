@@ -20,8 +20,7 @@ export async function GET() {
 
     const superAdmin = isSuperAdmin(userId);
     const roleOverride = getDevRoleOverrideByCookie();
-    const userFamilies = await familyService.getUserFamilies(userId);
-    const baseManagedFamilyIds = userFamilies.map((item) => item.familyId);
+    const baseManagedFamilyIds = await familyService.getManagedFamilyIdsForUser(userId);
 
     const managedFamilyIds =
       roleOverride === "VIEWER" ? [] : baseManagedFamilyIds;

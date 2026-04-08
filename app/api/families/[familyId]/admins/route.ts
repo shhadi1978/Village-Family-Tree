@@ -95,6 +95,29 @@ export async function POST(
       );
     }
 
+    if (role === familyService.ALL_FAMILIES_ADMIN_ROLE) {
+      const family = await familyService.getFamily(params.familyId);
+
+      if (!family?.villageId) {
+        return NextResponse.json(
+          { error: "Family not found" },
+          { status: 404 }
+        );
+      }
+
+      const alreadyVillageWide = await familyService.hasVillageWideFamilyAdminRole(
+        clerkId,
+        family.villageId
+      );
+
+      if (alreadyVillageWide) {
+        return NextResponse.json(
+          { error: "This user already manages all families in this village" },
+          { status: 409 }
+        );
+      }
+    }
+
     const admin = await familyService.addFamilyAdmin(params.familyId, clerkId, role);
 
     return NextResponse.json({ data: admin }, { status: 201 });
@@ -205,6 +228,40 @@ export async function PATCH(
         { error: "clerkId and role are required" },
         { status: 400 }
       );
+    }
+
+    if (role === familyService.ALL_FAMILIES_ADMIN_ROLE) {
+      const family = await familyService.getFamily(params.familyId);
+
+      if (!family?.villageId) {
+        return NextResponse.json(
+          { error: "Family not found" },
+          { status: 404 }
+        );
+      }
+
+      const alreadyVillageWide = await familyService.hasVillageWideFamilyAdminRole(
+        clerkId,
+        family.villageId
+      );
+
+      if (alreadyVillageWide) {
+        const currentRecord = await db.familyAdmin.findFirst({
+          where: {
+            clerkId,
+            familyId: params.familyId,
+            role: familyService.ALL_FAMILIES_ADMIN_ROLE,
+          },
+          select: { id: true },
+        });
+
+        if (!currentRecord) {
+          return NextResponse.json(
+            { error: "This user already manages all families in this village" },
+            { status: 409 }
+          );
+        }
+      }
     }
 
     const updated = await familyService.updateFamilyAdminRole(

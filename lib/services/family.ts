@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { getDevRoleOverrideByCookie } from "@/lib/authz";
 
 export type FamilySortMode = "MEMBERS_DESC" | "MEMBERS_ASC" | "NAME_ASC";
+export const ALL_FAMILIES_ADMIN_ROLE = "all_families_admin";
 
 function buildFamilyOrderBy(sort: FamilySortMode = "MEMBERS_DESC") {
   if (sort === "MEMBERS_ASC") {
@@ -352,6 +353,73 @@ export async function getUserFamilyAdminMappings(clerkId: string) {
 }
 
 /**
+ * Whether a user has a village-wide family admin role in the given village.
+ */
+export async function hasVillageWideFamilyAdminRole(
+  clerkId: string,
+  villageId: string
+): Promise<boolean> {
+  const mapping = await db.familyAdmin.findFirst({
+    where: {
+      clerkId,
+      role: ALL_FAMILIES_ADMIN_ROLE,
+      family: {
+        villageId,
+      },
+    },
+    select: { id: true },
+  });
+
+  return !!mapping;
+}
+
+/**
+ * Get all family ids a user can manage, including village-wide assignments.
+ */
+export async function getManagedFamilyIdsForUser(clerkId: string) {
+  const mappings = await db.familyAdmin.findMany({
+    where: { clerkId },
+    include: {
+      family: {
+        select: {
+          id: true,
+          villageId: true,
+        },
+      },
+    },
+  });
+
+  const directFamilyIds = mappings.map((item) => item.familyId).filter(Boolean);
+  const villageWideVillageIds = [
+    ...new Set(
+      mappings
+        .filter((item) => item.role === ALL_FAMILIES_ADMIN_ROLE)
+        .map((item) => item.family?.villageId)
+        .filter(Boolean)
+    ),
+  ] as string[];
+
+  if (villageWideVillageIds.length === 0) {
+    return [...new Set(directFamilyIds)];
+  }
+
+  const villageFamilies = await db.family.findMany({
+    where: {
+      villageId: {
+        in: villageWideVillageIds,
+      },
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return [
+    ...new Set([...directFamilyIds, ...villageFamilies.map((family) => family.id)]),
+  ];
+}
+
+/**
  * Get user's families (families they administer)
  */
 export async function getUserFamilies(clerkId: string) {
@@ -388,7 +456,20 @@ export async function isUserFamilyAdmin(
     select: { id: true },
   });
 
-  return !!admin;
+  if (admin) {
+    return true;
+  }
+
+  const family = await db.family.findUnique({
+    where: { id: familyId },
+    select: { villageId: true },
+  });
+
+  if (!family?.villageId) {
+    return false;
+  }
+
+  return hasVillageWideFamilyAdminRole(clerkId, family.villageId);
 }
 
 /**
