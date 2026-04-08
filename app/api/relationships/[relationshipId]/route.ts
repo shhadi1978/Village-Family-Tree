@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import * as relationshipService from "@/lib/services/relationship";
 import * as familyService from "@/lib/services/family";
-import { isSuperAdmin } from "@/lib/authz";
 
 export const runtime = "nodejs";
 
@@ -39,15 +38,22 @@ export async function DELETE(
       );
     }
 
-    // Check if user is admin of either family
-    const [isAdminOfFromFamily, isAdminOfToFamily] = await Promise.all([
-      familyService.isUserFamilyAdmin(userId, relationship.fromMember.familyId),
-      familyService.isUserFamilyAdmin(userId, relationship.toMember.familyId),
+    const [canDeleteFromFamily, canDeleteToFamily] = await Promise.all([
+      familyService.userHasFamilyPermission(
+        userId,
+        relationship.fromMember.familyId,
+        "relationship:delete"
+      ),
+      familyService.userHasFamilyPermission(
+        userId,
+        relationship.toMember.familyId,
+        "relationship:delete"
+      ),
     ]);
 
-    if (!isSuperAdmin(userId) && !isAdminOfFromFamily && !isAdminOfToFamily) {
+    if (!canDeleteFromFamily || !canDeleteToFamily) {
       return NextResponse.json(
-        { error: "غير مصرح: لست مديراً لأي من العائلتين" },
+        { error: "غير مصرح: يجب أن تملك صلاحية حذف العلاقات في كلتا العائلتين" },
         { status: 403 }
       );
     }

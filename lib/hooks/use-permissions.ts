@@ -1,11 +1,24 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  hasFamilyPermission,
+  type FamilyPermissionAction,
+  type FamilyRole,
+} from "@/lib/family-rbac";
 
 export type UserPermissions = {
   userId: string;
   isSuperAdmin: boolean;
-  roleOverride?: "SUPER_ADMIN" | "FAMILY_ADMIN" | "VIEWER" | null;
+  roleOverride?:
+    | "SUPER_ADMIN"
+    | "ALL_FAMILIES_ADMIN"
+    | "FAMILY_ADMIN"
+    | "FAMILY_EDITOR"
+    | "VIEWER"
+    | null;
+  roleScopeFamilyId?: string | null;
+  familyRoles: Record<string, FamilyRole>;
   managedFamilyIds: string[];
   canManageAnyFamily: boolean;
 };
@@ -55,6 +68,35 @@ export function usePermissions() {
     [permissions]
   );
 
+  const familyRoleMap = permissions?.familyRoles || {};
+
+  const hasPermission = (
+    familyId: string | null | undefined,
+    action: FamilyPermissionAction
+  ) => {
+    if (!familyId || !permissions) {
+      return false;
+    }
+
+    if (permissions.isSuperAdmin) {
+      return true;
+    }
+
+    return hasFamilyPermission(familyRoleMap[familyId], action);
+  };
+
+  const getFamilyRole = (familyId?: string | null): FamilyRole | null => {
+    if (!familyId || !permissions) {
+      return null;
+    }
+
+    if (permissions.isSuperAdmin) {
+      return "all_families_admin";
+    }
+
+    return familyRoleMap[familyId] || null;
+  };
+
   const canManageFamily = (familyId?: string | null) => {
     if (!familyId || !permissions) {
       return false;
@@ -63,12 +105,35 @@ export function usePermissions() {
     return permissions.isSuperAdmin || managedFamilySet.has(familyId);
   };
 
+  const effectiveRoleLabel = (() => {
+    const role = permissions?.roleOverride;
+    if (role === "SUPER_ADMIN") return "مدير عام";
+    if (role === "ALL_FAMILIES_ADMIN") return "مدير كل العائلات";
+    if (role === "FAMILY_ADMIN") return "مدير عائلة واحدة";
+    if (role === "FAMILY_EDITOR") return "محرر عائلة واحدة";
+    if (role === "VIEWER") return "مشاهد";
+    if (permissions?.isSuperAdmin) return "مدير عام";
+    if (permissions?.canManageAnyFamily) return "مدير/محرر";
+    return "مشاهد";
+  })();
+
   return {
     permissions,
     loading,
     error,
     isSuperAdmin: !!permissions?.isSuperAdmin,
     canManageAnyFamily: !!permissions?.canManageAnyFamily,
+    effectiveRoleLabel,
+    roleScopeFamilyId: permissions?.roleScopeFamilyId || null,
+    getFamilyRole,
+    hasFamilyPermission: hasPermission,
     canManageFamily,
+    canEditFamily: (familyId?: string | null) => hasPermission(familyId, "family:update"),
+    canDeleteFamily: (familyId?: string | null) => hasPermission(familyId, "family:delete"),
+    canCreateMember: (familyId?: string | null) => hasPermission(familyId, "member:create"),
+    canEditMember: (familyId?: string | null) => hasPermission(familyId, "member:update"),
+    canDeleteMember: (familyId?: string | null) => hasPermission(familyId, "member:delete"),
+    canCreateRelationship: (familyId?: string | null) => hasPermission(familyId, "relationship:create"),
+    canDeleteRelationship: (familyId?: string | null) => hasPermission(familyId, "relationship:delete"),
   };
 }

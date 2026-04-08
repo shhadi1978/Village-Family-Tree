@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { BarChart3, Users, Home, Wrench, UserCog } from "lucide-react";
 import { isSuperAdmin } from "@/lib/authz";
 import DevRoleSwitcher from "@/components/DevRoleSwitcher";
+import EffectiveRoleBadge from "@/components/EffectiveRoleBadge";
 
 export const metadata = {
   title: "لوحة التحكم - شجرة عائلات القرية",
@@ -47,6 +48,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         </div>
         <div className="mt-3">
           <DevRoleSwitcher />
+        </div>
+        <div className="mt-2">
+          <EffectiveRoleBadge />
         </div>
         <nav className={`mt-3 grid ${mobileNavCols} gap-2 text-sm`}>
           <Link
@@ -150,8 +154,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       <div className="md:mr-64">
         <header className="hidden md:block bg-slate-800 border-b border-slate-700 px-8 py-4">
           <div className="flex items-center justify-between gap-4">
-            <h2 className="text-2xl font-bold text-white">لوحة التحكم</h2>
-            <div className="min-w-[300px] max-w-[460px] w-full">
+            <div className="space-y-2">
+              <h2 className="text-2xl font-bold text-white">لوحة التحكم</h2>
+              <EffectiveRoleBadge />
+            </div>
+            <div className="min-w-[320px] max-w-[520px] w-full">
               <DevRoleSwitcher />
             </div>
           </div>

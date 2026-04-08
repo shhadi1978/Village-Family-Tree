@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import * as familyService from "@/lib/services/family";
-import { isSuperAdmin } from "@/lib/authz";
 
 export const runtime = "nodejs";
 
@@ -71,14 +70,15 @@ export async function PUT(
 
     const { familyId } = params;
 
-    // Check if user is admin of the family
-    const isAdmin = isSuperAdmin(userId)
-      ? true
-      : await familyService.isUserFamilyAdmin(userId, familyId);
+    const canUpdateFamily = await familyService.userHasFamilyPermission(
+      userId,
+      familyId,
+      "family:update"
+    );
 
-    if (!isAdmin) {
+    if (!canUpdateFamily) {
       return NextResponse.json(
-        { error: "Unauthorized: Not a family admin" },
+        { error: "Unauthorized: You do not have permission to update this family" },
         { status: 403 }
       );
     }
@@ -155,14 +155,15 @@ export async function DELETE(
 
     const { familyId } = params;
 
-    // Check if user is admin of the family
-    const isAdmin = isSuperAdmin(userId)
-      ? true
-      : await familyService.isUserFamilyAdmin(userId, familyId);
+    const canDeleteFamily = await familyService.userHasFamilyPermission(
+      userId,
+      familyId,
+      "family:delete"
+    );
 
-    if (!isAdmin) {
+    if (!canDeleteFamily) {
       return NextResponse.json(
-        { error: "Unauthorized: Not a family admin" },
+        { error: "Unauthorized: You do not have permission to delete this family" },
         { status: 403 }
       );
     }

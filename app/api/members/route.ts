@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import * as memberService from "@/lib/services/member";
 import * as familyService from "@/lib/services/family";
-import { isSuperAdmin } from "@/lib/authz";
 
 export const runtime = "nodejs";
 
@@ -152,14 +151,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check if user is admin of the family
-    const isAdmin = isSuperAdmin(userId)
-      ? true
-      : await familyService.isUserFamilyAdmin(userId, familyId);
+    const canCreateMember = await familyService.userHasFamilyPermission(
+      userId,
+      familyId,
+      "member:create"
+    );
 
-    if (!isAdmin) {
+    if (!canCreateMember) {
       return NextResponse.json(
-        { error: "Unauthorized: Not a family admin" },
+        { error: "Unauthorized: You do not have permission to add members to this family" },
         { status: 403 }
       );
     }

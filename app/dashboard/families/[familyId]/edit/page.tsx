@@ -22,7 +22,7 @@ export default function FamilyEditPage() {
   const router = useRouter();
   const familyId = params.familyId as string;
   const { getFamily } = useFamilies();
-  const { canManageFamily, loading: permissionsLoading } = usePermissions();
+  const { canEditFamily, loading: permissionsLoading } = usePermissions();
 
   const [family, setFamily] = useState<FamilyModel | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,7 +63,7 @@ export default function FamilyEditPage() {
     return <div className="text-slate-400">جاري التحقق من الصلاحيات...</div>;
   }
 
-  if (!canManageFamily(familyId)) {
+  if (!canEditFamily(familyId)) {
     return (
       <div className="space-y-4">
         <Link

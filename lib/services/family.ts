@@ -1,8 +1,22 @@
 import { db } from "@/lib/db";
-import { getDevRoleOverrideByCookie } from "@/lib/authz";
+import {
+  getDevRoleOverrideByCookie,
+  getDevRoleScopeFamilyIdByCookie,
+  isConfiguredSuperAdmin,
+  isSuperAdmin,
+} from "@/lib/authz";
+import {
+  getHigherFamilyRole,
+  hasFamilyPermission,
+  normalizeFamilyRole,
+  type FamilyPermissionAction,
+  type FamilyRole,
+} from "@/lib/family-rbac";
 
 export type FamilySortMode = "MEMBERS_DESC" | "MEMBERS_ASC" | "NAME_ASC";
 export const ALL_FAMILIES_ADMIN_ROLE = "all_families_admin";
+
+export type { FamilyPermissionAction, FamilyRole };
 
 function buildFamilyOrderBy(sort: FamilySortMode = "MEMBERS_DESC") {
   if (sort === "MEMBERS_ASC") {
@@ -352,6 +366,97 @@ export async function getUserFamilyAdminMappings(clerkId: string) {
   });
 }
 
+export async function getUserFamilyRoleMap(
+  clerkId: string
+): Promise<Record<string, FamilyRole>> {
+  const roleOverride = getDevRoleOverrideByCookie();
+  const scopedFamilyId = getDevRoleScopeFamilyIdByCookie();
+  const configuredSuperAdmin = isConfiguredSuperAdmin(clerkId);
+
+  if (configuredSuperAdmin && roleOverride && roleOverride !== "SUPER_ADMIN") {
+    if (roleOverride === "VIEWER") {
+      return {};
+    }
+
+    if (roleOverride === "ALL_FAMILIES_ADMIN") {
+      const families = await db.family.findMany({
+        select: { id: true },
+      });
+
+      return families.reduce((acc, family) => {
+        acc[family.id] = "all_families_admin";
+        return acc;
+      }, {} as Record<string, FamilyRole>);
+    }
+
+    if (scopedFamilyId) {
+      return {
+        [scopedFamilyId]: roleOverride === "FAMILY_EDITOR" ? "editor" : "admin",
+      };
+    }
+
+    return {};
+  }
+
+  const mappings = await db.familyAdmin.findMany({
+    where: { clerkId },
+    include: {
+      family: {
+        select: {
+          id: true,
+          villageId: true,
+        },
+      },
+    },
+  });
+
+  const roleMap: Record<string, FamilyRole> = {};
+  const villageWideVillageIds = new Set<string>();
+
+  for (const mapping of mappings) {
+    const normalizedRole = normalizeFamilyRole(mapping.role);
+    if (mapping.familyId) {
+      roleMap[mapping.familyId] =
+        getHigherFamilyRole(roleMap[mapping.familyId], normalizedRole) || normalizedRole;
+    }
+
+    if (normalizedRole === ALL_FAMILIES_ADMIN_ROLE && mapping.family?.villageId) {
+      villageWideVillageIds.add(mapping.family.villageId);
+    }
+  }
+
+  if (villageWideVillageIds.size === 0) {
+    return roleMap;
+  }
+
+  const villageFamilies = await db.family.findMany({
+    where: {
+      villageId: {
+        in: Array.from(villageWideVillageIds),
+      },
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  for (const family of villageFamilies) {
+    roleMap[family.id] =
+      getHigherFamilyRole(roleMap[family.id], ALL_FAMILIES_ADMIN_ROLE) ||
+      ALL_FAMILIES_ADMIN_ROLE;
+  }
+
+  return roleMap;
+}
+
+export async function getUserFamilyRole(
+  clerkId: string,
+  familyId: string
+): Promise<FamilyRole | null> {
+  const roleMap = await getUserFamilyRoleMap(clerkId);
+  return roleMap[familyId] || null;
+}
+
 /**
  * Whether a user has a village-wide family admin role in the given village.
  */
@@ -377,46 +482,10 @@ export async function hasVillageWideFamilyAdminRole(
  * Get all family ids a user can manage, including village-wide assignments.
  */
 export async function getManagedFamilyIdsForUser(clerkId: string) {
-  const mappings = await db.familyAdmin.findMany({
-    where: { clerkId },
-    include: {
-      family: {
-        select: {
-          id: true,
-          villageId: true,
-        },
-      },
-    },
-  });
-
-  const directFamilyIds = mappings.map((item) => item.familyId).filter(Boolean);
-  const villageWideVillageIds = [
-    ...new Set(
-      mappings
-        .filter((item) => item.role === ALL_FAMILIES_ADMIN_ROLE)
-        .map((item) => item.family?.villageId)
-        .filter(Boolean)
-    ),
-  ] as string[];
-
-  if (villageWideVillageIds.length === 0) {
-    return [...new Set(directFamilyIds)];
-  }
-
-  const villageFamilies = await db.family.findMany({
-    where: {
-      villageId: {
-        in: villageWideVillageIds,
-      },
-    },
-    select: {
-      id: true,
-    },
-  });
-
-  return [
-    ...new Set([...directFamilyIds, ...villageFamilies.map((family) => family.id)]),
-  ];
+  const roleMap = await getUserFamilyRoleMap(clerkId);
+  return Object.entries(roleMap)
+    .filter(([, role]) => hasFamilyPermission(role, "member:update"))
+    .map(([familyId]) => familyId);
 }
 
 /**
@@ -424,7 +493,12 @@ export async function getManagedFamilyIdsForUser(clerkId: string) {
  */
 export async function getUserFamilies(clerkId: string) {
   return db.familyAdmin.findMany({
-    where: { clerkId },
+    where: {
+      clerkId,
+      role: {
+        in: ["editor", "admin", ALL_FAMILIES_ADMIN_ROLE],
+      },
+    },
     include: {
       family: {
         include: {
@@ -444,32 +518,43 @@ export async function isUserFamilyAdmin(
   clerkId: string,
   familyId: string
 ): Promise<boolean> {
-  if (getDevRoleOverrideByCookie() === "VIEWER") {
-    return false;
+  return userHasFamilyPermission(clerkId, familyId, "member:update");
+}
+
+export async function userHasFamilyPermission(
+  clerkId: string,
+  familyId: string,
+  action: FamilyPermissionAction
+): Promise<boolean> {
+  const roleOverride = getDevRoleOverrideByCookie();
+  const scopedFamilyId = getDevRoleScopeFamilyIdByCookie();
+  const configuredSuperAdmin = isConfiguredSuperAdmin(clerkId);
+
+  if (configuredSuperAdmin && roleOverride && roleOverride !== "SUPER_ADMIN") {
+    if (roleOverride === "VIEWER") {
+      return false;
+    }
+
+    if (roleOverride === "ALL_FAMILIES_ADMIN") {
+      return hasFamilyPermission("all_families_admin", action);
+    }
+
+    if (!scopedFamilyId || scopedFamilyId !== familyId) {
+      return false;
+    }
+
+    return hasFamilyPermission(
+      roleOverride === "FAMILY_EDITOR" ? "editor" : "admin",
+      action
+    );
   }
 
-  const admin = await db.familyAdmin.findFirst({
-    where: {
-      clerkId,
-      familyId,
-    },
-    select: { id: true },
-  });
-
-  if (admin) {
+  if (isSuperAdmin(clerkId)) {
     return true;
   }
 
-  const family = await db.family.findUnique({
-    where: { id: familyId },
-    select: { villageId: true },
-  });
-
-  if (!family?.villageId) {
-    return false;
-  }
-
-  return hasVillageWideFamilyAdminRole(clerkId, family.villageId);
+  const role = await getUserFamilyRole(clerkId, familyId);
+  return hasFamilyPermission(role, action);
 }
 
 /**

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import {
+  DEV_ROLE_SCOPE_FAMILY_COOKIE,
   DEV_ROLE_OVERRIDE_COOKIE,
   DEV_SUPER_ADMIN_DISABLED_COOKIE,
   DevRoleOverride,
+  getDevRoleScopeFamilyIdByCookie,
   getDevRoleOverrideByCookie,
   isConfiguredSuperAdmin,
   isDevSuperAdminDisabledByCookie,
@@ -37,6 +39,7 @@ export async function GET() {
           isDev: isDevMode(),
           isConfiguredSuperAdmin: configuredSuperAdmin,
           roleMode,
+          scopeFamilyId: getDevRoleScopeFamilyIdByCookie(),
           isSuperAdminEffective: isSuperAdmin(userId),
           isTemporarilyDisabled: isDevSuperAdminDisabledByCookie(),
         },
@@ -54,7 +57,10 @@ export async function GET() {
 
 /**
  * POST /api/dev/super-admin-mode
- * Body: { roleMode: "SUPER_ADMIN" | "FAMILY_ADMIN" | "VIEWER" }
+ * Body: {
+ *   roleMode: "SUPER_ADMIN" | "ALL_FAMILIES_ADMIN" | "FAMILY_ADMIN" | "FAMILY_EDITOR" | "VIEWER",
+ *   scopeFamilyId?: string
+ * }
  */
 export async function POST(req: NextRequest) {
   try {
@@ -80,14 +86,31 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const roleMode = body?.roleMode as DevRoleOverride | undefined;
+    const scopeFamilyId =
+      typeof body?.scopeFamilyId === "string" ? body.scopeFamilyId.trim() : "";
 
     if (
       roleMode !== "SUPER_ADMIN" &&
+      roleMode !== "ALL_FAMILIES_ADMIN" &&
       roleMode !== "FAMILY_ADMIN" &&
+      roleMode !== "FAMILY_EDITOR" &&
       roleMode !== "VIEWER"
     ) {
       return NextResponse.json(
-        { error: "roleMode is required (SUPER_ADMIN | FAMILY_ADMIN | VIEWER)" },
+        {
+          error:
+            "roleMode is required (SUPER_ADMIN | ALL_FAMILIES_ADMIN | FAMILY_ADMIN | FAMILY_EDITOR | VIEWER)",
+        },
+        { status: 400 }
+      );
+    }
+
+    const requiresScopedFamily =
+      roleMode === "FAMILY_ADMIN" || roleMode === "FAMILY_EDITOR";
+
+    if (requiresScopedFamily && !scopeFamilyId) {
+      return NextResponse.json(
+        { error: "scopeFamilyId is required for FAMILY_ADMIN and FAMILY_EDITOR" },
         { status: 400 }
       );
     }
@@ -98,6 +121,7 @@ export async function POST(req: NextRequest) {
           isDev: true,
           isConfiguredSuperAdmin: true,
           roleMode,
+          scopeFamilyId: requiresScopedFamily ? scopeFamilyId : null,
           isSuperAdminEffective: roleMode === "SUPER_ADMIN",
           isTemporarilyDisabled: roleMode !== "SUPER_ADMIN",
         },
@@ -110,6 +134,15 @@ export async function POST(req: NextRequest) {
       value: roleMode,
       path: "/",
       maxAge: 60 * 60 * 24,
+      httpOnly: true,
+      sameSite: "lax",
+    });
+
+    response.cookies.set({
+      name: DEV_ROLE_SCOPE_FAMILY_COOKIE,
+      value: requiresScopedFamily ? scopeFamilyId : "",
+      path: "/",
+      maxAge: requiresScopedFamily ? 60 * 60 * 24 : 0,
       httpOnly: true,
       sameSite: "lax",
     });

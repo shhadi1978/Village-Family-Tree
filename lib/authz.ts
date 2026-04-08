@@ -2,7 +2,13 @@ import { cookies } from "next/headers";
 
 export const DEV_SUPER_ADMIN_DISABLED_COOKIE = "dev_super_admin_disabled";
 export const DEV_ROLE_OVERRIDE_COOKIE = "dev_role_override";
-export type DevRoleOverride = "SUPER_ADMIN" | "FAMILY_ADMIN" | "VIEWER";
+export const DEV_ROLE_SCOPE_FAMILY_COOKIE = "dev_role_scope_family_id";
+export type DevRoleOverride =
+  | "SUPER_ADMIN"
+  | "ALL_FAMILIES_ADMIN"
+  | "FAMILY_ADMIN"
+  | "FAMILY_EDITOR"
+  | "VIEWER";
 
 export function getSuperAdminIds(): string[] {
   return (process.env.SUPER_ADMIN_CLERK_IDS || "")
@@ -42,11 +48,31 @@ export function getDevRoleOverrideByCookie(): DevRoleOverride | null {
     const cookieStore = cookies();
     const mode = cookieStore.get(DEV_ROLE_OVERRIDE_COOKIE)?.value;
 
-    if (mode === "SUPER_ADMIN" || mode === "FAMILY_ADMIN" || mode === "VIEWER") {
+    if (
+      mode === "SUPER_ADMIN" ||
+      mode === "ALL_FAMILIES_ADMIN" ||
+      mode === "FAMILY_ADMIN" ||
+      mode === "FAMILY_EDITOR" ||
+      mode === "VIEWER"
+    ) {
       return mode;
     }
 
     return null;
+  } catch {
+    return null;
+  }
+}
+
+export function getDevRoleScopeFamilyIdByCookie(): string | null {
+  if (process.env.NODE_ENV === "production") {
+    return null;
+  }
+
+  try {
+    const cookieStore = cookies();
+    const familyId = cookieStore.get(DEV_ROLE_SCOPE_FAMILY_COOKIE)?.value?.trim();
+    return familyId || null;
   } catch {
     return null;
   }
@@ -60,7 +86,7 @@ export function isSuperAdmin(userId?: string | null): boolean {
   }
 
   const roleOverride = getDevRoleOverrideByCookie();
-  if (roleOverride === "FAMILY_ADMIN" || roleOverride === "VIEWER") {
+  if (roleOverride && roleOverride !== "SUPER_ADMIN") {
     return false;
   }
 

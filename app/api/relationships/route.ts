@@ -3,7 +3,6 @@ import { auth } from "@clerk/nextjs/server";
 import * as relationshipService from "@/lib/services/relationship";
 import * as familyService from "@/lib/services/family";
 import * as memberService from "@/lib/services/member";
-import { isSuperAdmin } from "@/lib/authz";
 
 export const runtime = "nodejs";
 
@@ -161,30 +160,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check if user is admin of at least one family (preferably both)
-    const [isAdminOfFromFamily, isAdminOfToFamily] = await Promise.all([
-      familyService.isUserFamilyAdmin(userId, fromMember.familyId),
-      familyService.isUserFamilyAdmin(userId, toMember.familyId),
+    const [canEditFromFamily, canEditToFamily] = await Promise.all([
+      familyService.userHasFamilyPermission(
+        userId,
+        fromMember.familyId,
+        "relationship:create"
+      ),
+      familyService.userHasFamilyPermission(
+        userId,
+        toMember.familyId,
+        "relationship:create"
+      ),
     ]);
 
-    if (!isSuperAdmin(userId) && !isAdminOfFromFamily && !isAdminOfToFamily) {
+    if (!canEditFromFamily || !canEditToFamily) {
       return NextResponse.json(
-        { error: "غير مصرح: لست مديراً لأي من العائلتين" },
+        { error: "غير مصرح: يجب أن تملك صلاحية تعديل العلاقات في كلتا العائلتين" },
         { status: 403 }
       );
-    }
-
-    // For PARENT relationships, require admin of both families
-    if (type === "PARENT" && !isSuperAdmin(userId)) {
-      if (!isAdminOfFromFamily || !isAdminOfToFamily) {
-        return NextResponse.json(
-          {
-            error:
-              "غير مصرح: يجب أن تكون مديراً لكلتا العائلتين عند إنشاء علاقة أبوة/أمومة",
-          },
-          { status: 403 }
-        );
-      }
     }
 
     const relationship = await relationshipService.createRelationship({

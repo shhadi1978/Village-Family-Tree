@@ -77,7 +77,16 @@ function relationshipLabel(
 export default function FamilyDetailsPage() {
   const params = useParams();
   const familyId = params.familyId as string;
-  const { canManageFamily, isSuperAdmin } = usePermissions();
+  const {
+    canManageFamily,
+    canEditFamily,
+    canCreateMember,
+    canEditMember,
+    canDeleteMember,
+    canCreateRelationship,
+    canDeleteRelationship,
+    isSuperAdmin,
+  } = usePermissions();
 
   const { getFamily } = useFamilies();
   const {
@@ -122,6 +131,12 @@ export default function FamilyDetailsPage() {
     "ALL" | "PARENTS" | "CHILDREN" | "SPOUSES"
   >("ALL");
   const canManage = canManageFamily(familyId);
+  const canEditCurrentFamily = canEditFamily(familyId);
+  const canCreateCurrentMember = canCreateMember(familyId);
+  const canEditCurrentMember = canEditMember(familyId);
+  const canDeleteCurrentMember = canDeleteMember(familyId);
+  const canCreateCurrentRelationship = canCreateRelationship(familyId);
+  const canDeleteCurrentRelationship = canDeleteRelationship(familyId);
 
   const sortMembers = (list: any[]): any[] => {
     const cloned = [...list];
@@ -712,7 +727,7 @@ export default function FamilyDetailsPage() {
               )}
             </div>
           </div>
-          {canManage && (
+          {canEditCurrentFamily && (
             <Link
               href={`/dashboard/families/${familyId}/edit`}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
@@ -740,7 +755,7 @@ export default function FamilyDetailsPage() {
       <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
           <h2 className="text-2xl font-bold text-white">أفراد العائلة</h2>
-          {canManage && (
+          {canCreateCurrentMember && (
             <div className="flex flex-col sm:flex-row gap-2">
               <Link
                 href={`/dashboard/members/new?familyId=${familyId}`}
@@ -838,26 +853,36 @@ export default function FamilyDetailsPage() {
                         </div>
                       )}
                     </div>
+                    <Link
+                      href={`/family/${familyId}?member=${member.id}`}
+                      className="mt-2 inline-flex items-center text-xs text-blue-300 hover:text-blue-200"
+                    >
+                      عرض نسل هذا الشخص في الشجرة ←
+                    </Link>
                   </div>
                 </div>
 
-                {canManage && (
+                {(canEditCurrentMember || canDeleteCurrentMember) && (
                   <div className="flex items-center gap-2">
-                    <Link
-                      href={`/dashboard/members/${member.id}/edit`}
-                      className="p-2 text-slate-400 hover:text-white hover:bg-slate-600 rounded transition"
-                      title="تعديل"
-                    >
-                      <Edit className="w-5 h-5" />
-                    </Link>
-                    <button
-                      onClick={() => handleDeleteMember(member.id)}
-                      disabled={isDeleting}
-                      className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-600 rounded transition"
-                      title="حذف"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+                    {canEditCurrentMember && (
+                      <Link
+                        href={`/dashboard/members/${member.id}/edit`}
+                        className="p-2 text-slate-400 hover:text-white hover:bg-slate-600 rounded transition"
+                        title="تعديل"
+                      >
+                        <Edit className="w-5 h-5" />
+                      </Link>
+                    )}
+                    {canDeleteCurrentMember && (
+                      <button
+                        onClick={() => handleDeleteMember(member.id)}
+                        disabled={isDeleting}
+                        className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-600 rounded transition"
+                        title="حذف"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -870,7 +895,7 @@ export default function FamilyDetailsPage() {
                 ? "لا يوجد أفراد مطابقون لنتيجة البحث"
                 : "لم تتم إضافة أفراد بعد"}
             </p>
-            {canManage && (
+            {canCreateCurrentMember && (
               <Link
                 href={`/dashboard/members/new?familyId=${familyId}`}
                 className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition"
@@ -1041,7 +1066,7 @@ export default function FamilyDetailsPage() {
       )}
 
       {/* View Family Tree */}
-      {canManage && (
+      {(canCreateCurrentRelationship || canDeleteCurrentRelationship) && (
         <div className="bg-slate-800 rounded-lg border border-slate-700 p-6 space-y-4">
           <div>
             <h3 className="text-xl font-bold text-white">إدارة العلاقات بين الأفراد</h3>
@@ -1115,15 +1140,17 @@ export default function FamilyDetailsPage() {
             {relationshipPreviewText}
           </div>
 
-          <button
-            type="button"
-            onClick={handleCreateRelationship}
-            disabled={isSavingRelation || !selectedMemberId || !selectedRelatedMemberId}
-            className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg transition"
-          >
-            <Plus className="w-4 h-4" />
-            {isSavingRelation ? "جاري الإضافة..." : "إضافة العلاقة"}
-          </button>
+          {canCreateCurrentRelationship && (
+            <button
+              type="button"
+              onClick={handleCreateRelationship}
+              disabled={isSavingRelation || !selectedMemberId || !selectedRelatedMemberId}
+              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg transition"
+            >
+              <Plus className="w-4 h-4" />
+              {isSavingRelation ? "جاري الإضافة..." : "إضافة العلاقة"}
+            </button>
+          )}
 
           <div className="pt-2 border-t border-slate-700">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
@@ -1173,15 +1200,17 @@ export default function FamilyDetailsPage() {
                         </p>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteRelationship(relationship.id)}
-                        disabled={isDeletingRelation}
-                        className="p-2 text-slate-300 hover:text-red-400 hover:bg-slate-600 rounded transition"
-                        title="حذف العلاقة"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {canDeleteCurrentRelationship && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRelationship(relationship.id)}
+                          disabled={isDeletingRelation}
+                          className="p-2 text-slate-300 hover:text-red-400 hover:bg-slate-600 rounded transition"
+                          title="حذف العلاقة"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   );
                 })}

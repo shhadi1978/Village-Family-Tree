@@ -52,6 +52,16 @@ export default async function DeveloperPage() {
       : "Family Admin / Viewer";
 
   const roleOverride = getDevRoleOverrideByCookie() || "SUPER_ADMIN";
+  const roleOverrideLabel =
+    roleOverride === "SUPER_ADMIN"
+      ? "مدير عام"
+      : roleOverride === "ALL_FAMILIES_ADMIN"
+        ? "مدير كل العائلات"
+        : roleOverride === "FAMILY_ADMIN"
+          ? "مدير عائلة واحدة"
+          : roleOverride === "FAMILY_EDITOR"
+            ? "محرر عائلة واحدة"
+            : "مشاهد";
 
   let dbStatus = "متصل";
   let dbOk = true;
@@ -116,7 +126,7 @@ export default async function DeveloperPage() {
         />
         <StatusCard label="المشرف الأعلى" value={configuredSuperAdmin ? "مفعّل" : "غير مفعّل"} ok={configuredSuperAdmin} />
         <StatusCard label="الرتبة الحالية" value={effectiveRole} ok={superAdmin} />
-        <StatusCard label="الدور الحالي" value={roleOverride} />
+        <StatusCard label="الدور الحالي" value={roleOverrideLabel} />
         <StatusCard label="قاعدة البيانات" value={dbStatus} ok={dbOk} />
       </section>
 

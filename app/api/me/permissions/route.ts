@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { getDevRoleOverrideByCookie, isSuperAdmin } from "@/lib/authz";
+import {
+  getDevRoleOverrideByCookie,
+  getDevRoleScopeFamilyIdByCookie,
+  isSuperAdmin,
+} from "@/lib/authz";
 import * as familyService from "@/lib/services/family";
+import { hasFamilyPermission } from "@/lib/family-rbac";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +25,11 @@ export async function GET() {
 
     const superAdmin = isSuperAdmin(userId);
     const roleOverride = getDevRoleOverrideByCookie();
-    const baseManagedFamilyIds = await familyService.getManagedFamilyIdsForUser(userId);
+    const roleScopeFamilyId = getDevRoleScopeFamilyIdByCookie();
+    const familyRoles = await familyService.getUserFamilyRoleMap(userId);
+    const baseManagedFamilyIds = Object.entries(familyRoles)
+      .filter(([, role]) => hasFamilyPermission(role, "member:update"))
+      .map(([familyId]) => familyId);
 
     const managedFamilyIds =
       roleOverride === "VIEWER" ? [] : baseManagedFamilyIds;
@@ -31,6 +40,8 @@ export async function GET() {
           userId,
           isSuperAdmin: superAdmin,
           roleOverride,
+          roleScopeFamilyId,
+          familyRoles,
           managedFamilyIds,
           canManageAnyFamily: superAdmin || managedFamilyIds.length > 0,
         },

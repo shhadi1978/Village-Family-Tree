@@ -20,7 +20,7 @@ export default function NewMemberPage() {
     error: familiesError,
     getFamilies,
   } = useFamilies();
-  const { canManageFamily, loading: permissionsLoading } = usePermissions();
+  const { canCreateMember, loading: permissionsLoading } = usePermissions();
   const [selectedFamilyId, setSelectedFamilyId] = useState(initialFamilyId);
   const [villageId, setVillageId] = useState<string | null>(null);
   const [family, setFamily] = useState<any | null>(null);
@@ -46,8 +46,8 @@ export default function NewMemberPage() {
       return [];
     }
 
-    return villageFamilies.filter((candidate: any) => canManageFamily(candidate.id));
-  }, [villageFamilies, canManageFamily]);
+    return villageFamilies.filter((candidate: any) => canCreateMember(candidate.id));
+  }, [villageFamilies, canCreateMember]);
 
   useEffect(() => {
     if (selectedFamilyId) {
@@ -151,7 +151,7 @@ export default function NewMemberPage() {
     return <div className="text-slate-400">جاري التحميل...</div>;
   }
 
-  if (!canManageFamily(selectedFamilyId)) {
+  if (!canCreateMember(selectedFamilyId)) {
     return (
       <div className="space-y-6">
         <Link

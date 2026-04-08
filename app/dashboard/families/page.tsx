@@ -11,7 +11,13 @@ type FamilySortMode = "members-desc" | "members-asc" | "name-asc";
 
 export default function FamiliesPage() {
   const { families, loading, error, getFamilies, deleteFamily } = useFamilies();
-  const { isSuperAdmin, canManageAnyFamily, canManageFamily } = usePermissions();
+  const {
+    isSuperAdmin,
+    canManageAnyFamily,
+    canManageFamily,
+    canEditFamily,
+    canDeleteFamily,
+  } = usePermissions();
   const [villageId, setVillageId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortMode, setSortMode] = useState<FamilySortMode>("members-desc");
@@ -154,6 +160,8 @@ export default function FamiliesPage() {
         <div className="grid gap-4">
           {familyItems.map((family: any) => {
             const canManage = canManageFamily(family.id);
+            const canEdit = canEditFamily(family.id);
+            const canDelete = canDeleteFamily(family.id);
             return (
             <div
               key={family.id}
@@ -187,23 +195,27 @@ export default function FamiliesPage() {
                   </div>
                 </div>
 
-                {canManage && (
+                {(canEdit || canDelete) && (
                   <div className="flex items-center gap-2">
-                    <Link
-                      href={`/dashboard/families/${family.id}/edit`}
-                      className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition"
-                      title="تعديل"
-                    >
-                      <Edit className="w-5 h-5" />
-                    </Link>
-                    <button
-                      onClick={() => handleDelete(family.id)}
-                      disabled={isDeleting}
-                      className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded transition"
-                      title="حذف"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+                    {canEdit && (
+                      <Link
+                        href={`/dashboard/families/${family.id}/edit`}
+                        className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition"
+                        title="تعديل"
+                      >
+                        <Edit className="w-5 h-5" />
+                      </Link>
+                    )}
+                    {canDelete && (
+                      <button
+                        onClick={() => handleDelete(family.id)}
+                        disabled={isDeleting}
+                        className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded transition"
+                        title="حذف"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

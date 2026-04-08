@@ -12,11 +12,7 @@ import { ArrowLeft, Home } from "lucide-react";
 import Link from "next/link";
 
 type MemberSortMode = "SEQUENCE" | "ALPHABETICAL" | "LINEAGE";
-type TreeSectionMode = {
-  showParents: boolean;
-  showSiblings: boolean;
-  showDescendants: boolean;
-};
+type TreeViewMode = "FULL_FAMILY" | "PERSON_DESCENDANTS";
 
 // Dynamically import ReactFlow component (requires next/dynamic for SSR)
 const FamilyTreeVisualization = dynamic(
@@ -34,18 +30,14 @@ export default function FamilyTreePage() {
   const { getMembers } = useMembers();
 
   const [family, setFamily] = useState<any | null>(null);
-  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(
-    startMemberId
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(startMemberId);
+  const [treeViewMode, setTreeViewMode] = useState<TreeViewMode>(
+    startMemberId ? "PERSON_DESCENDANTS" : "FULL_FAMILY"
   );
   const [treeData, setTreeData] = useState<any | null>(null);
   const [members, setMembers] = useState<any[]>([]);
   const [memberSortMode, setMemberSortMode] = useState<MemberSortMode>("SEQUENCE");
   const [searchQuery, setSearchQuery] = useState("");
-  const [treeSections, setTreeSections] = useState<TreeSectionMode>({
-    showParents: true,
-    showSiblings: true,
-    showDescendants: true,
-  });
   const [loading, setLoading] = useState(true);
   const [treeLoading, setTreeLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +76,25 @@ export default function FamilyTreePage() {
     });
   }, [sortedMembers, searchQuery]);
 
+  const fullTreeRootMemberId = useMemo(() => {
+    if (!Array.isArray(members) || members.length === 0) {
+      return null;
+    }
+
+    const founder = members.find((member) => isFamilyFounder(member, family?.name));
+    return (founder || members[0])?.id || null;
+  }, [members, family?.name]);
+
+  const activeTreeMemberId =
+    treeViewMode === "FULL_FAMILY" ? fullTreeRootMemberId : selectedMemberId;
+
+  useEffect(() => {
+    if (startMemberId) {
+      setSelectedMemberId(startMemberId);
+      setTreeViewMode("PERSON_DESCENDANTS");
+    }
+  }, [startMemberId]);
+
   // Load family and members
   useEffect(() => {
     const loadFamily = async () => {
@@ -99,10 +110,6 @@ export default function FamilyTreePage() {
           : membersPayload?.members || [];
         setMembers(memberArray as any[]);
 
-        // Set first member as selected if none specified
-        if (!selectedMemberId && memberArray.length > 0) {
-          setSelectedMemberId(memberArray[0].id);
-        }
       } catch (err) {
         console.error("Error loading family:", err);
         setError(
@@ -114,18 +121,19 @@ export default function FamilyTreePage() {
     };
 
     loadFamily();
-  }, [familyId, getFamily, getMembers, selectedMemberId]);
+  }, [familyId, getFamily, getMembers]);
 
   // Load tree data when member is selected
   useEffect(() => {
     const loadTree = async () => {
-      if (!selectedMemberId) return;
+      if (!activeTreeMemberId) {
+        setTreeData(null);
+        return;
+      }
 
       const cacheKey = [
-        selectedMemberId,
-        treeSections.showParents ? "parents" : "no-parents",
-        treeSections.showSiblings ? "siblings" : "no-siblings",
-        treeSections.showDescendants ? "descendants" : "no-descendants",
+        activeTreeMemberId,
+        treeViewMode,
       ].join(":");
 
       const isManualRefresh = treeReloadTick !== lastHandledReloadTickRef.current;
@@ -140,7 +148,9 @@ export default function FamilyTreePage() {
       try {
         setTreeLoading(true);
         const response = await fetch(
-          `/api/tree/${selectedMemberId}?depth=4&showParents=${String(treeSections.showParents)}&showSiblings=${String(treeSections.showSiblings)}&showDescendants=${String(treeSections.showDescendants)}`
+          `/api/tree/${activeTreeMemberId}?depth=10&view=${
+            treeViewMode === "FULL_FAMILY" ? "full" : "descendants"
+          }`
         );
 
         if (!response.ok) {
@@ -161,7 +171,7 @@ export default function FamilyTreePage() {
     };
 
     loadTree();
-  }, [selectedMemberId, treeSections, treeReloadTick]);
+  }, [activeTreeMemberId, treeViewMode, treeReloadTick]);
 
   if (loading) {
     return (
@@ -233,7 +243,7 @@ export default function FamilyTreePage() {
               />
             </div>
             <p className="text-xs text-slate-400">
-              اختر شخصاً وحدد ما تريد عرضه: الوالدان، الإخوة، السلالة
+              بدون اختيار شخص: عرض الشجرة الكاملة. عند اختيار شخص: عرض نسله فقط حتى آخر الشجرة.
             </p>
             <div className="mt-3">
               <label className="block text-xs text-slate-300 mb-1">ترتيب الأفراد</label>
@@ -247,55 +257,26 @@ export default function FamilyTreePage() {
                 <option value="LINEAGE">حسب السلالة</option>
               </select>
             </div>
-            <div className="mt-3 space-y-2">
-              <p className="block text-xs text-slate-300">أقسام الشجرة</p>
-              <label className="flex items-center gap-2 text-xs text-slate-200">
-                <input
-                  type="checkbox"
-                  checked={treeSections.showParents}
-                  onChange={(e) =>
-                    setTreeSections((prev) => ({
-                      ...prev,
-                      showParents: e.target.checked,
-                    }))
-                  }
-                  className="rounded border-slate-500 bg-slate-800"
-                />
-                عرض الوالدين
-              </label>
-              <label className="flex items-center gap-2 text-xs text-slate-200">
-                <input
-                  type="checkbox"
-                  checked={treeSections.showSiblings}
-                  onChange={(e) =>
-                    setTreeSections((prev) => ({
-                      ...prev,
-                      showSiblings: e.target.checked,
-                    }))
-                  }
-                  className="rounded border-slate-500 bg-slate-800"
-                />
-                عرض الإخوة والأخوات
-              </label>
-              <label className="flex items-center gap-2 text-xs text-slate-200">
-                <input
-                  type="checkbox"
-                  checked={treeSections.showDescendants}
-                  onChange={(e) =>
-                    setTreeSections((prev) => ({
-                      ...prev,
-                      showDescendants: e.target.checked,
-                    }))
-                  }
-                  className="rounded border-slate-500 bg-slate-800"
-                />
-                عرض السلالة
-              </label>
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setTreeViewMode("FULL_FAMILY");
+                  setSelectedMemberId(null);
+                }}
+                className={`w-full px-3 py-2 rounded-lg border text-sm transition ${
+                  treeViewMode === "FULL_FAMILY"
+                    ? "bg-emerald-600/20 border-emerald-500 text-emerald-100"
+                    : "border-slate-600 text-slate-200 hover:bg-slate-700"
+                }`}
+              >
+                عرض الشجرة الكاملة للعائلة
+              </button>
             </div>
             <button
               type="button"
               onClick={() => setTreeReloadTick((prev) => prev + 1)}
-              disabled={!selectedMemberId || treeLoading}
+              disabled={!activeTreeMemberId || treeLoading}
               className="mt-3 w-full px-3 py-2 rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-700 disabled:opacity-50 text-sm transition"
             >
               {treeLoading ? "جاري التحديث..." : "تحديث الشجرة"}
@@ -309,9 +290,12 @@ export default function FamilyTreePage() {
                 return (
                   <button
                     key={member.id}
-                    onClick={() => setSelectedMemberId(member.id)}
+                    onClick={() => {
+                      setSelectedMemberId(member.id);
+                      setTreeViewMode("PERSON_DESCENDANTS");
+                    }}
                     className={`w-full text-left px-4 py-3 rounded transition text-sm border ${
-                      selectedMemberId === member.id
+                      treeViewMode === "PERSON_DESCENDANTS" && selectedMemberId === member.id
                         ? "bg-blue-600 text-white border-blue-500"
                         : founder
                           ? "text-amber-100 bg-amber-900/25 border-amber-700 hover:bg-amber-900/35"
