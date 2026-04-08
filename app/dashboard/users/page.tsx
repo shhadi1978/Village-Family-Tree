@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2, Search, ShieldCheck, Trash2, UserCog, Users } from "lucide-react";
+import { Loader2, Search, ShieldCheck, Trash2, UserCog, Users, Filter } from "lucide-react";
 import { usePermissions } from "@/lib/hooks/use-permissions";
 
 type SearchableUser = {
@@ -35,6 +35,11 @@ type UserAdminMapping = {
   };
 };
 
+type AdminUserSummary = SearchableUser & {
+  assignmentsCount: number;
+  families: Array<{ id: string; name: string; role: string }>;
+};
+
 const roleOptions = [
   { value: "admin", label: "مدير" },
   { value: "editor", label: "محرر" },
@@ -50,6 +55,8 @@ export default function UsersManagementPage() {
   const [usersError, setUsersError] = useState<string | null>(null);
   const [userResults, setUserResults] = useState<SearchableUser[]>([]);
   const [selectedUser, setSelectedUser] = useState<SearchableUser | null>(null);
+  const [adminUsers, setAdminUsers] = useState<AdminUserSummary[]>([]);
+  const [adminUsersLoading, setAdminUsersLoading] = useState(false);
   const [families, setFamilies] = useState<FamilyItem[]>([]);
   const [familiesLoading, setFamiliesLoading] = useState(false);
   const [selectedFamilyId, setSelectedFamilyId] = useState("");
@@ -58,6 +65,8 @@ export default function UsersManagementPage() {
   const [mappingsLoading, setMappingsLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [assignmentRoleFilter, setAssignmentRoleFilter] = useState("ALL");
+  const [assignmentFamilyFilter, setAssignmentFamilyFilter] = useState("ALL");
 
   useEffect(() => {
     const currentVillageId = localStorage.getItem("selectedVillageId");
@@ -115,6 +124,48 @@ export default function UsersManagementPage() {
       mounted = false;
     };
   }, [villageId, isSuperAdmin]);
+
+  useEffect(() => {
+    if (!villageId || !isSuperAdmin) {
+      setAdminUsers([]);
+      return;
+    }
+
+    let mounted = true;
+
+    const loadAdminUsers = async () => {
+      try {
+        setAdminUsersLoading(true);
+        const query = usersQuery.trim();
+        const response = await fetch(
+          `/api/users/admins?villageId=${encodeURIComponent(villageId)}${query ? `&q=${encodeURIComponent(query)}` : ""}`
+        );
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload?.error || "تعذر تحميل المستخدمين الحاليين");
+        }
+
+        if (mounted) {
+          setAdminUsers(Array.isArray(payload?.data) ? payload.data : []);
+        }
+      } catch (error) {
+        if (mounted) {
+          setAdminUsers([]);
+        }
+      } finally {
+        if (mounted) {
+          setAdminUsersLoading(false);
+        }
+      }
+    };
+
+    loadAdminUsers();
+
+    return () => {
+      mounted = false;
+    };
+  }, [villageId, isSuperAdmin, usersQuery]);
 
   useEffect(() => {
     if (!isSuperAdmin || selectedUser || usersQuery.trim().length < 2) {
@@ -207,6 +258,20 @@ export default function UsersManagementPage() {
     [families, assignedFamilyIds]
   );
 
+  const visibleMappings = useMemo(() => {
+    return mappings.filter((mapping) => {
+      if (assignmentRoleFilter !== "ALL" && mapping.role !== assignmentRoleFilter) {
+        return false;
+      }
+
+      if (assignmentFamilyFilter !== "ALL" && mapping.familyId !== assignmentFamilyFilter) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [mappings, assignmentRoleFilter, assignmentFamilyFilter]);
+
   const handleAssign = async () => {
     if (!selectedUser) {
       setMessage("اختر مستخدماً أولاً");
@@ -244,6 +309,11 @@ export default function UsersManagementPage() {
       );
       const refreshedPayload = await refreshed.json();
       setMappings(Array.isArray(refreshedPayload?.data) ? refreshedPayload.data : []);
+      if (villageId) {
+        const summary = await fetch(`/api/users/admins?villageId=${encodeURIComponent(villageId)}`);
+        const summaryPayload = await summary.json();
+        setAdminUsers(Array.isArray(summaryPayload?.data) ? summaryPayload.data : []);
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر إضافة الصلاحية");
     } finally {
@@ -276,6 +346,11 @@ export default function UsersManagementPage() {
 
       setMappings((prev) => prev.filter((item) => item.familyId !== familyIdToRemove));
       setMessage("تمت إزالة الصلاحية بنجاح");
+      if (villageId) {
+        const summary = await fetch(`/api/users/admins?villageId=${encodeURIComponent(villageId)}`);
+        const summaryPayload = await summary.json();
+        setAdminUsers(Array.isArray(summaryPayload?.data) ? summaryPayload.data : []);
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر إزالة الصلاحية");
     } finally {
@@ -370,6 +445,44 @@ export default function UsersManagementPage() {
                 placeholder="ابحث عن مستخدم مسجل في النظام..."
                 className="w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-white placeholder-slate-400 outline-none focus:border-blue-500"
               />
+            </div>
+
+            <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-sm font-medium text-slate-200">المدراء الحاليون في القرية</p>
+                {adminUsersLoading && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
+              </div>
+
+              {adminUsers.length === 0 ? (
+                <p className="text-sm text-slate-400">لا يوجد مستخدمون لديهم صلاحيات حالياً أو لم يتم العثور على نتائج.</p>
+              ) : (
+                <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                  {adminUsers.map((user) => (
+                    <button
+                      key={user.clerkId}
+                      type="button"
+                      onClick={() => {
+                        setSelectedUser(user);
+                        setUsersQuery(user.fullName || user.email);
+                        setUserResults([]);
+                        setMessage(null);
+                      }}
+                      className={`w-full rounded-lg border px-4 py-3 text-right transition ${selectedUser?.clerkId === user.clerkId ? "border-blue-500/50 bg-blue-500/10" : "border-slate-700 bg-slate-800 hover:border-blue-500/40 hover:bg-slate-700"}`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-white">{user.fullName}</p>
+                          <p className="text-sm text-slate-400">{user.email || user.clerkId}</p>
+                        </div>
+                        <div className="text-left">
+                          <p className="text-sm font-semibold text-blue-300">{user.assignmentsCount}</p>
+                          <p className="text-xs text-slate-400">صلاحية</p>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {usersLoading && (
@@ -496,13 +609,56 @@ export default function UsersManagementPage() {
                   {mappingsLoading && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
                 </div>
 
+                {mappings.length > 0 && (
+                  <div className="mb-4 grid gap-3 md:grid-cols-2">
+                    <div>
+                      <label className="mb-2 flex items-center gap-2 text-sm text-slate-300">
+                        <Filter className="h-4 w-4" />
+                        فلترة حسب الدور
+                      </label>
+                      <select
+                        value={assignmentRoleFilter}
+                        onChange={(event) => setAssignmentRoleFilter(event.target.value)}
+                        className="w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-white outline-none focus:border-blue-500"
+                      >
+                        <option value="ALL">كل الأدوار</option>
+                        {roleOptions.map((role) => (
+                          <option key={role.value} value={role.value}>
+                            {role.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm text-slate-300">فلترة حسب العائلة</label>
+                      <select
+                        value={assignmentFamilyFilter}
+                        onChange={(event) => setAssignmentFamilyFilter(event.target.value)}
+                        className="w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-white outline-none focus:border-blue-500"
+                      >
+                        <option value="ALL">كل العائلات</option>
+                        {mappings.map((mapping) => (
+                          <option key={mapping.familyId} value={mapping.familyId}>
+                            {mapping.family?.name || mapping.familyId}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
                 {mappings.length === 0 ? (
                   <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-5 text-sm text-slate-400">
                     لا توجد صلاحيات حالية لهذا المستخدم داخل القرية المختارة.
                   </div>
+                ) : visibleMappings.length === 0 ? (
+                  <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-5 text-sm text-slate-400">
+                    لا توجد نتائج مطابقة للفلاتر المحددة.
+                  </div>
                 ) : (
                   <div className="space-y-3">
-                    {mappings.map((mapping) => (
+                    {visibleMappings.map((mapping) => (
                       <div
                         key={mapping.id}
                         className="rounded-lg border border-slate-700 bg-slate-900/50 p-4"
