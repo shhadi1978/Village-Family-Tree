@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, Plus, Trash2, Search, UserCheck } from "lucide-react";
-import { genderLabelAr, formatDateAr } from "@/lib/i18n/format";
+import { formatDateAr } from "@/lib/i18n/format";
 import { getMemberDisplayName } from "@/lib/member-display";
+import { useRouter } from "next/navigation";
 
 interface Member {
   id: string;
@@ -44,6 +45,8 @@ export default function MemberDetailDialog({
   const [selectedMotherId, setSelectedMotherId] = useState<string>("");
   const [currentMotherName, setCurrentMotherName] = useState<string | null>(null);
   const [hasMother, setHasMother] = useState(false);
+  const [fatherTreeTarget, setFatherTreeTarget] = useState<{ familyId: string; memberId: string; name: string } | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -71,6 +74,9 @@ export default function MemberDetailDialog({
         const motherRelation = parents.find(
           (rel: any) => rel?.fromMember?.gender === "FEMALE"
         );
+        const fatherRelation = parents.find(
+          (rel: any) => rel?.fromMember?.gender === "MALE"
+        );
 
         if (motherRelation?.fromMember?.fullName) {
           setHasMother(true);
@@ -78,6 +84,16 @@ export default function MemberDetailDialog({
         } else {
           setHasMother(false);
           setCurrentMotherName(null);
+        }
+
+        if (fatherRelation?.fromMember?.familyId && fatherRelation?.fromMember?.id) {
+          setFatherTreeTarget({
+            familyId: fatherRelation.fromMember.familyId,
+            memberId: fatherRelation.fromMember.id,
+            name: fatherRelation.fromMember.fullName || "والدها",
+          });
+        } else {
+          setFatherTreeTarget(null);
         }
       } catch {
         // Keep UI usable even if relationship status fails to load.
@@ -308,6 +324,15 @@ export default function MemberDetailDialog({
     }
   };
 
+  const handleGoToFatherTree = () => {
+    if (!fatherTreeTarget) {
+      return;
+    }
+
+    onClose();
+    router.push(`/family/${fatherTreeTarget.familyId}?member=${fatherTreeTarget.memberId}`);
+  };
+
   const dialogContent = (
     <div className="fixed inset-0 z-50" dir="rtl">
       <button
@@ -345,13 +370,16 @@ export default function MemberDetailDialog({
               <h3 className="text-white text-lg font-semibold">{getMemberDisplayName(member)}</h3>
             </div>
 
+            {fatherTreeTarget && (
+              <button
+                onClick={handleGoToFatherTree}
+                className="w-full mt-4 px-3 py-2 rounded bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium transition"
+              >
+                الانتقال إلى شجرة والدها: {fatherTreeTarget.name}
+              </button>
+            )}
+
             <div className="space-y-2 text-sm text-slate-300 mt-4">
-              {member.gender && (
-                <p className="flex justify-between">
-                  <span>النوع:</span>
-                  <span className="text-white">{genderLabelAr(member.gender)}</span>
-                </p>
-              )}
               {member.dateOfBirth && (
                 <p className="flex justify-between">
                   <span>تاريخ الميلاد:</span>

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Handle, Position } from "reactflow";
 import { User } from "lucide-react";
-import { genderLabelAr, formatDateAr } from "@/lib/i18n/format";
+import { formatDateAr } from "@/lib/i18n/format";
 import { getMemberDisplayName } from "@/lib/member-display";
 import { isFamilyFounder } from "@/lib/member-founder";
 import MemberDetailDialog from "@/components/dialogs/MemberDetailDialog";
@@ -51,12 +51,6 @@ export default function MemberNode({ data }: MemberNodeProps) {
     : isMale
       ? "bg-gradient-to-br from-blue-500 to-cyan-500 border-blue-400"
       : "bg-gradient-to-br from-blue-500 to-purple-500 border-blue-500";
-
-  const genderTextTone = isFemale
-    ? "text-rose-300"
-    : isMale
-      ? "text-blue-300"
-      : "text-slate-300";
 
   const handleNodeClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -127,12 +121,6 @@ export default function MemberNode({ data }: MemberNodeProps) {
 
       {/* Member Info */}
       <div className="mt-2 space-y-1 text-xs text-slate-400">
-        {member.gender && (
-          <p className={`text-center ${genderTextTone}`}>
-            {genderLabelAr(member.gender)}
-          </p>
-        )}
-
         {member.dateOfBirth && (
           <p className="text-center">
             م. {formatDateAr(member.dateOfBirth)}
