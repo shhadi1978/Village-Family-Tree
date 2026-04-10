@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X, Plus, Trash2 } from "lucide-react";
 import { genderLabelAr, formatDateAr } from "@/lib/i18n/format";
 import { getMemberDisplayName } from "@/lib/member-display";
@@ -38,6 +38,15 @@ export default function MemberDetailDialog({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [childName, setChildName] = useState("");
   const [spouseName, setSpouseName] = useState("");
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen || !member) return null;
 
@@ -180,76 +189,67 @@ export default function MemberDetailDialog({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-800 rounded-lg shadow-2xl max-w-md w-full border border-slate-700">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-700">
-          <h2 className="text-white text-xl font-bold">تفاصيل الفرد</h2>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-white transition"
-          >
-            <X size={24} />
-          </button>
+    <div className="fixed inset-0 z-50" dir="rtl">
+      <button
+        type="button"
+        aria-label="إغلاق نافذة التفاصيل"
+        className="absolute inset-0 bg-black/55"
+        onClick={onClose}
+      />
+
+      <div className="absolute inset-y-0 right-0 w-full max-w-md bg-slate-800 border-l border-slate-700 shadow-2xl overflow-y-auto">
+        <div className="sticky top-0 z-10 bg-slate-800/95 backdrop-blur border-b border-slate-700 px-5 py-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-white text-lg font-bold">تفاصيل الفرد</h2>
+            <button onClick={onClose} className="text-slate-400 hover:text-white transition">
+              <X size={22} />
+            </button>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">يمكنك تعديل الشجرة من هذه اللوحة مباشرة</p>
         </div>
 
-        {/* Member Info */}
-        <div className="p-6 space-y-4">
-          {/* Avatar & Name */}
-          <div className="text-center">
-            {member.photoUrl ? (
-              <img
-                src={member.photoUrl}
-                alt={member.fullName}
-                className="w-16 h-16 rounded-full object-cover mx-auto mb-2 border-2 border-blue-500"
-              />
-            ) : (
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center mx-auto mb-2">
-                <span className="text-2xl">👤</span>
-              </div>
-            )}
-            <h3 className="text-white text-lg font-semibold">
-              {getMemberDisplayName(member)}
-            </h3>
+        <div className="p-5 space-y-4">
+          <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
+            <div className="text-center">
+              {member.photoUrl ? (
+                <img
+                  src={member.photoUrl}
+                  alt={member.fullName}
+                  className="w-16 h-16 rounded-full object-cover mx-auto mb-2 border-2 border-blue-500"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center mx-auto mb-2">
+                  <span className="text-2xl">👤</span>
+                </div>
+              )}
+              <h3 className="text-white text-lg font-semibold">{getMemberDisplayName(member)}</h3>
+            </div>
+
+            <div className="space-y-2 text-sm text-slate-300 mt-4">
+              {member.gender && (
+                <p className="flex justify-between">
+                  <span>النوع:</span>
+                  <span className="text-white">{genderLabelAr(member.gender)}</span>
+                </p>
+              )}
+              {member.dateOfBirth && (
+                <p className="flex justify-between">
+                  <span>تاريخ الميلاد:</span>
+                  <span className="text-white">{formatDateAr(member.dateOfBirth)}</span>
+                </p>
+              )}
+              {member.dateOfDeath && (
+                <p className="flex justify-between">
+                  <span>تاريخ الوفاة:</span>
+                  <span className="text-red-400">{formatDateAr(member.dateOfDeath)}</span>
+                </p>
+              )}
+            </div>
           </div>
 
-          {/* Details */}
-          <div className="space-y-2 text-sm text-slate-300">
-            {member.gender && (
-              <p className="flex justify-between">
-                <span>النوع:</span>
-                <span className="text-white">{genderLabelAr(member.gender)}</span>
-              </p>
-            )}
-            {member.dateOfBirth && (
-              <p className="flex justify-between">
-                <span>تاريخ الميلاد:</span>
-                <span className="text-white">{formatDateAr(member.dateOfBirth)}</span>
-              </p>
-            )}
-            {member.dateOfDeath && (
-              <p className="flex justify-between">
-                <span>تاريخ الوفاة:</span>
-                <span className="text-red-400">{formatDateAr(member.dateOfDeath)}</span>
-              </p>
-            )}
-          </div>
+          {error && <div className="p-3 bg-red-900/30 border border-red-700 rounded text-red-300 text-sm">{error}</div>}
+          {successMessage && <div className="p-3 bg-emerald-900/30 border border-emerald-700 rounded text-emerald-300 text-sm">{successMessage}</div>}
 
-          {/* Error Message */}
-          {error && (
-            <div className="p-3 bg-red-900/30 border border-red-700 rounded text-red-300 text-sm">
-              {error}
-            </div>
-          )}
-
-          {/* Success Message */}
-          {successMessage && (
-            <div className="p-3 bg-emerald-900/30 border border-emerald-700 rounded text-emerald-300 text-sm">
-              {successMessage}
-            </div>
-          )}
-
-          {/* Action Buttons */}
           <div className="space-y-2 pt-2">
             <div className="rounded-lg border border-slate-700 p-3 space-y-2">
               <p className="text-xs text-slate-300">إضافة طفل جديد</p>
@@ -259,29 +259,24 @@ export default function MemberDetailDialog({
                 placeholder="اكتب الاسم الكامل للطفل"
                 className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-600 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => handleAddChild("MALE")}
-                disabled={loadingAction?.startsWith("add-child") || !childName.trim()}
-                className="flex items-center justify-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 text-white rounded text-sm font-medium transition"
-              >
-                <Plus size={16} />
-                <span className="text-xs">
-                  {loadingAction === "add-child-MALE" ? "جاري الإضافة..." : "+ ابن"}
-                </span>
-              </button>
-              <button
-                onClick={() => handleAddChild("FEMALE")}
-                disabled={loadingAction?.startsWith("add-child") || !childName.trim()}
-                className="flex items-center justify-center gap-1 px-3 py-2 bg-pink-600 hover:bg-pink-700 disabled:bg-slate-600 text-white rounded text-sm font-medium transition"
-              >
-                <Plus size={16} />
-                <span className="text-xs">
-                  {loadingAction === "add-child-FEMALE" ? "جاري الإضافة..." : "+ ابنة"}
-                </span>
-              </button>
-            </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => handleAddChild("MALE")}
+                  disabled={loadingAction?.startsWith("add-child") || !childName.trim()}
+                  className="flex items-center justify-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 text-white rounded text-sm font-medium transition"
+                >
+                  <Plus size={16} />
+                  <span className="text-xs">{loadingAction === "add-child-MALE" ? "جاري الإضافة..." : "+ ابن"}</span>
+                </button>
+                <button
+                  onClick={() => handleAddChild("FEMALE")}
+                  disabled={loadingAction?.startsWith("add-child") || !childName.trim()}
+                  className="flex items-center justify-center gap-1 px-3 py-2 bg-pink-600 hover:bg-pink-700 disabled:bg-slate-600 text-white rounded text-sm font-medium transition"
+                >
+                  <Plus size={16} />
+                  <span className="text-xs">{loadingAction === "add-child-FEMALE" ? "جاري الإضافة..." : "+ ابنة"}</span>
+                </button>
+              </div>
             </div>
 
             {allowedSpouseGender ? (
@@ -293,12 +288,10 @@ export default function MemberDetailDialog({
                   placeholder="اكتب الاسم الكامل للزوج/الزوجة"
                   className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-600 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
-
-                <div className="grid grid-cols-1 gap-2">
                 <button
                   onClick={() => handleAddSpouse(allowedSpouseGender)}
                   disabled={loadingAction?.startsWith("add-spouse") || !spouseName.trim()}
-                  className="flex items-center justify-center gap-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-600 text-white rounded text-sm font-medium transition"
+                  className="w-full flex items-center justify-center gap-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-600 text-white rounded text-sm font-medium transition"
                 >
                   <Plus size={16} />
                   <span className="text-xs">
@@ -309,7 +302,6 @@ export default function MemberDetailDialog({
                         : "+ زوجة"}
                   </span>
                 </button>
-                </div>
               </div>
             ) : (
               <div className="p-2 rounded border border-slate-600 text-slate-300 text-xs text-center">
@@ -328,8 +320,7 @@ export default function MemberDetailDialog({
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-slate-700 flex justify-end">
+        <div className="p-4 border-t border-slate-700 flex justify-end sticky bottom-0 bg-slate-800/95 backdrop-blur">
           <button
             onClick={onClose}
             className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded font-medium transition"
