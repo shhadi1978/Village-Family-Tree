@@ -16,10 +16,15 @@ import ReactFlow, {
 import "reactflow/dist/style.css";
 import MemberNode from "./nodes/MemberNode";
 import MarriageNode from "./nodes/MarriageNode";
+import SpouseChipNode from "./nodes/SpouseChipNode";
+
+const DEV_MARRIAGE_EXPERIMENT = process.env.NODE_ENV === "development";
+const SPOUSE_DETAIL_ZOOM_THRESHOLD = 0.95;
 
 const nodeTypes = {
   member: MemberNode,
   marriage: MarriageNode,
+  spouseChip: SpouseChipNode,
 };
 
 interface FamilyTreeVisualizationProps {
@@ -157,7 +162,9 @@ function convertTreeToGraph(
   familyName?: string,
   onRefresh?: () => void,
   collapsedMemberIds: Set<string> = new Set(),
-  onToggleCollapse?: (memberId: string) => void
+  onToggleCollapse?: (memberId: string) => void,
+  zoomLevel: number = 1,
+  expandedMarriageIds: Set<string> = new Set()
 ) {
   const nodeMap = new Map<string, Node>();
   const edgeMap = new Map<string, Edge>();
@@ -207,6 +214,30 @@ function convertTreeToGraph(
       position: { x, y },
       type: "marriage",
       draggable: false,
+      selectable: DEV_MARRIAGE_EXPERIMENT,
+    });
+  }
+
+  function ensureSpouseChipNode(id: string, spouse: TreeNodeUI, x: number, y: number, expanded: boolean) {
+    const existing = nodeMap.get(id);
+    if (existing) {
+      existing.position = { x, y };
+      existing.data = {
+        spouse: spouse.member,
+        expanded,
+      };
+      return;
+    }
+
+    nodeMap.set(id, {
+      id,
+      data: {
+        spouse: spouse.member,
+        expanded,
+      },
+      position: { x, y },
+      type: "spouseChip",
+      draggable: false,
       selectable: false,
     });
   }
@@ -231,9 +262,15 @@ function convertTreeToGraph(
       const marriageNodeId = spouse
         ? getMarriageNodeId(treeNode.member.id, spouse.member.id)
         : `${treeNode.member.id}__${marriage.marriageId}`;
+      const spouseChipNodeId = `${marriageNodeId}__spouse_chip`;
+      const spouseDetailsExpanded = zoomLevel >= SPOUSE_DETAIL_ZOOM_THRESHOLD || expandedMarriageIds.has(marriageNodeId);
 
       if (spouse) {
-        ensureNode(spouse, spouseX, memberY);
+        if (DEV_MARRIAGE_EXPERIMENT) {
+          ensureSpouseChipNode(spouseChipNodeId, spouse, spouseX - 56, memberY + 8, spouseDetailsExpanded);
+        } else {
+          ensureNode(spouse, spouseX, memberY);
+        }
       }
 
       ensureMarriageNode(marriageNodeId, marriageX, memberY + MARRIAGE_OFFSET_Y);
@@ -252,8 +289,8 @@ function convertTreeToGraph(
       if (spouse) {
         ensureEdge(
           buildEdge(
-            `${spouse.member.id}-${marriageNodeId}-spouse-link`,
-            spouse.member.id,
+            `${spouseChipNodeId}-${marriageNodeId}-spouse-link`,
+            DEV_MARRIAGE_EXPERIMENT ? spouseChipNodeId : spouse.member.id,
             marriageNodeId,
             "spouse",
             "source-left",
@@ -278,6 +315,7 @@ function convertTreeToGraph(
   function getChildSections(
     treeNode: TreeNodeUI,
     memberX: number,
+    memberY: number,
     spouseLayout: ReturnType<typeof placeSpouses>
   ) {
     const sections: Array<{
@@ -288,11 +326,32 @@ function convertTreeToGraph(
 
     const directChildren = [...treeNode.children].sort(compareTreeNodes);
     if (directChildren.length > 0) {
+      if (DEV_MARRIAGE_EXPERIMENT) {
+        const soloMarriageId = `${treeNode.member.id}__solo_marriage`;
+        ensureMarriageNode(soloMarriageId, memberX, memberY + MARRIAGE_OFFSET_Y);
+        ensureEdge(
+          buildEdge(
+            `${treeNode.member.id}-${soloMarriageId}-solo-spouse-link`,
+            treeNode.member.id,
+            soloMarriageId,
+            "spouse",
+            "source-bottom",
+            "target-top"
+          )
+        );
+
+        sections.push({
+          sourceId: soloMarriageId,
+          anchorX: memberX,
+          children: directChildren,
+        });
+      } else {
       sections.push({
         sourceId: treeNode.member.id,
         anchorX: memberX,
         children: directChildren,
       });
+      }
     }
 
     spouseLayout.marriageLayouts.forEach((layout) => {
@@ -322,7 +381,7 @@ function convertTreeToGraph(
     processedMembers.add(memberId);
     ensureNode(treeNode, centerX, levelY);
     const spouseLayout = placeSpouses(treeNode, centerX, levelY);
-    const childSections = getChildSections(treeNode, centerX, spouseLayout);
+    const childSections = getChildSections(treeNode, centerX, levelY, spouseLayout);
 
     if (childSections.length === 0 || collapsedMemberIds.has(memberId)) {
       return;
@@ -364,7 +423,7 @@ function convertTreeToGraph(
     ensureNode(treeNode, rootX, rootY);
     processedMembers.add(treeNode.member.id);
     const spouseLayout = placeSpouses(treeNode, rootX, rootY);
-    const childSections = getChildSections(treeNode, rootX, spouseLayout);
+    const childSections = getChildSections(treeNode, rootX, rootY, spouseLayout);
 
     const sortedParents = [...treeNode.parents].sort(compareTreeNodes);
     const parentsStartX = rootX - ((sortedParents.length - 1) * localHorizontalGap) / 2;
@@ -458,6 +517,8 @@ function FamilyTreeFlowCanvas({
   onRefresh,
 }: FamilyTreeVisualizationProps) {
   const [collapsedMemberIds, setCollapsedMemberIds] = useState<Set<string>>(new Set());
+  const [expandedMarriageIds, setExpandedMarriageIds] = useState<Set<string>>(new Set());
+  const [zoomLevel, setZoomLevel] = useState(1);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const { fitView } = useReactFlow();
@@ -474,6 +535,22 @@ function FamilyTreeFlowCanvas({
     });
   };
 
+  const handleNodeClick = (_event: React.MouseEvent, node: Node) => {
+    if (!DEV_MARRIAGE_EXPERIMENT || node.type !== "marriage") {
+      return;
+    }
+
+    setExpandedMarriageIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(node.id)) {
+        next.delete(node.id);
+      } else {
+        next.add(node.id);
+      }
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (treeData && !loading) {
       const { nodes: newNodes, edges: newEdges } = convertTreeToGraph(
@@ -481,14 +558,27 @@ function FamilyTreeFlowCanvas({
         familyName,
         onRefresh,
         collapsedMemberIds,
-        handleToggleCollapse
+        handleToggleCollapse,
+        zoomLevel,
+        expandedMarriageIds
       );
 
       setNodes(newNodes);
       setEdges(newEdges);
       setTimeout(() => fitView(), 100);
     }
-  }, [treeData, loading, familyName, onRefresh, collapsedMemberIds, setNodes, setEdges, fitView]);
+  }, [
+    treeData,
+    loading,
+    familyName,
+    onRefresh,
+    collapsedMemberIds,
+    zoomLevel,
+    expandedMarriageIds,
+    setNodes,
+    setEdges,
+    fitView,
+  ]);
 
   if (loading) {
     return (
@@ -518,6 +608,12 @@ function FamilyTreeFlowCanvas({
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeClick={handleNodeClick}
+        onMove={(_event, viewport) => {
+          if (DEV_MARRIAGE_EXPERIMENT) {
+            setZoomLevel(viewport.zoom);
+          }
+        }}
         nodeTypes={nodeTypes}
         fitView
         defaultEdgeOptions={{
@@ -553,6 +649,11 @@ function FamilyTreeFlowCanvas({
               <div className="w-3 h-3 bg-purple-500 rounded"></div>
               <span>علاقة زواج</span>
             </div>
+            {DEV_MARRIAGE_EXPERIMENT && (
+              <div className="text-[11px] text-slate-400 pt-1">
+                في وضع التطوير: انقر عقدة الزواج لتوسعة/طي شريحة الزوج أو الزوجة.
+              </div>
+            )}
           </div>
         </div>
       </ReactFlow>
