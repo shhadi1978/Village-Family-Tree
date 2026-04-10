@@ -28,8 +28,11 @@ interface MemberNodeProps {
 export default function MemberNode({ data }: MemberNodeProps) {
   const { member, familyName } = data;
   const founder = isFamilyFounder(member, familyName);
-  const isMale = member.gender === "MALE";
-  const isFemale = member.gender === "FEMALE";
+  
+  // Safely handle gender value
+  const memberGender = member.gender ? String(member.gender).toUpperCase() : "OTHER";
+  const isMale = memberGender === "MALE";
+  const isFemale = memberGender === "FEMALE";
 
   const memberCardTone = isFemale
     ? "bg-rose-900/20 border-rose-500 hover:border-rose-400"
@@ -74,7 +77,13 @@ export default function MemberNode({ data }: MemberNodeProps) {
             src={member.photoUrl}
             alt={member.fullName}
             className={`w-12 h-12 rounded-full object-cover border-2 ${
-              founder ? "founder-node-border" : "border-blue-500"
+              founder
+                ? "founder-node-border"
+                : isFemale
+                  ? "border-pink-400"
+                  : isMale
+                    ? "border-blue-400"
+                    : "border-slate-400"
             }`}
           />
         ) : (

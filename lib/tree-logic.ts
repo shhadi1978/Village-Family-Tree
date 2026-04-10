@@ -209,13 +209,15 @@ async function buildMarriageGroups(
       }
     }
 
-    if (!marriageId || !childNode) {
+    if (!childNode) {
       return;
     }
 
-    const existing = childrenByMarriageId.get(marriageId) || [];
-    existing.push(childNode);
-    childrenByMarriageId.set(marriageId, existing);
+    if (marriageId) {
+      const existing = childrenByMarriageId.get(marriageId) || [];
+      existing.push(childNode);
+      childrenByMarriageId.set(marriageId, existing);
+    }
   });
 
   const marriageIds = Array.from(

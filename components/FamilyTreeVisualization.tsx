@@ -253,6 +253,7 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string) {
       children: TreeNodeUI[];
     }> = [];
 
+    // الأبناء المباشرين من الآباء الوحيدين
     const directChildren = [...treeNode.children].sort(compareTreeNodes);
     if (directChildren.length > 0) {
       sections.push({
@@ -262,6 +263,7 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string) {
       });
     }
 
+    // الأبناء من كل مجموعة زواج
     spouseLayout.marriageLayouts.forEach((layout) => {
       if (layout.children.length === 0) {
         return;
