@@ -87,7 +87,7 @@ async function inferMarriageIdForParentRelationship(
   }
 
   const counterpart = existingParents.find(
-    (relationship) => relationship.fromMember?.gender !== parent.gender
+    (relationship: any) => relationship.fromMember?.gender !== parent.gender
   );
 
   if (!counterpart?.fromMemberId) {
