@@ -207,6 +207,18 @@ export default function MemberEditPage() {
         return true;
       }
 
+      if (relationshipIntent === "SPOUSE") {
+        if (member.gender === "MALE") {
+          return candidate.gender === "FEMALE";
+        }
+
+        if (member.gender === "FEMALE") {
+          return candidate.gender === "MALE";
+        }
+
+        return false;
+      }
+
       return true;
     });
   }, [villageMembers, member, relationshipIntent]);
@@ -320,6 +332,18 @@ export default function MemberEditPage() {
         toMemberId = selectedRelatedMemberId;
         type = "PARENT";
       } else {
+        if (member.gender === "OTHER") {
+          throw new Error("لا يمكن ربط زوج/زوجة لفرد بجنس غير محدد");
+        }
+
+        if (member.gender === "MALE" && selected.gender !== "FEMALE") {
+          throw new Error("عند اختيار زوج/زوجة لذكر يجب اختيار أنثى فقط");
+        }
+
+        if (member.gender === "FEMALE" && selected.gender !== "MALE") {
+          throw new Error("عند اختيار زوج/زوجة لأنثى يجب اختيار ذكر فقط");
+        }
+
         fromMemberId = member.id;
         toMemberId = selectedRelatedMemberId;
         type = "SPOUSE";
@@ -353,6 +377,19 @@ export default function MemberEditPage() {
     if (!member || !newParentId || !changingParent) return;
 
     const existing = changingParent === "FATHER" ? currentFather : currentMother;
+    const selectedParent =
+      changingParent === "FATHER"
+        ? fatherCandidates.find((candidate) => candidate.id === newParentId)
+        : motherCandidates.find((candidate) => candidate.id === newParentId);
+
+    if (!selectedParent) {
+      setRelationError(
+        changingParent === "FATHER"
+          ? "يجب اختيار ذكر صالح ليكون أباً"
+          : "يجب اختيار أنثى صالحة لتكون أماً"
+      );
+      return;
+    }
 
     if (existing && existing.fromMemberId === newParentId) {
       setRelationError("هذا الشخص هو الوالد الحالي بالفعل، لا يوجد تغيير.");
@@ -544,7 +581,7 @@ export default function MemberEditPage() {
                     onChange={(e) => setNewParentId(e.target.value)}
                     className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
                   >
-                    <option value="">اختر الأب الجديد...</option>
+                    <option value="">اختر أباً من الذكور...</option>
                     {fatherCandidates.map((candidate) => (
                       <option key={candidate.id} value={candidate.id}>
                         {getMemberOptionLabel(candidate, fatherCandidates)}
@@ -593,7 +630,7 @@ export default function MemberEditPage() {
                     onChange={(e) => setNewParentId(e.target.value)}
                     className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
                   >
-                    <option value="">اختر الأم الجديدة...</option>
+                    <option value="">اختر أماً من الإناث...</option>
                     {motherCandidates.map((candidate) => (
                       <option key={candidate.id} value={candidate.id}>
                         {getMemberOptionLabel(candidate, motherCandidates)}
@@ -646,7 +683,19 @@ export default function MemberEditPage() {
                     onChange={(e) => setSelectedRelatedMemberId(e.target.value)}
                     className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
                   >
-                    <option value="">اختر فرداً</option>
+                    <option value="">
+                      {relationshipIntent === "FATHER"
+                        ? "اختر أباً من الذكور"
+                        : relationshipIntent === "MOTHER"
+                          ? "اختر أماً من الإناث"
+                          : relationshipIntent === "SPOUSE" && member.gender === "MALE"
+                        ? "اختر زوجة"
+                        : relationshipIntent === "SPOUSE" && member.gender === "FEMALE"
+                          ? "اختر زوجاً"
+                          : relationshipIntent === "SPOUSE" && member.gender === "OTHER"
+                            ? "لا يمكن اختيار زوج/زوجة لهذا الفرد"
+                            : "اختر فرداً"}
+                    </option>
                     {availableRelatedMembers.map((candidate) => (
                       <option key={candidate.id} value={candidate.id}>
                         {getMemberOptionLabel(candidate, availableRelatedMembers)}
@@ -663,7 +712,11 @@ export default function MemberEditPage() {
               <button
                 type="button"
                 onClick={handleCreateRelationship}
-                disabled={isSavingRelation || !selectedRelatedMemberId}
+                disabled={
+                  isSavingRelation ||
+                  !selectedRelatedMemberId ||
+                  (relationshipIntent === "SPOUSE" && member.gender === "OTHER")
+                }
                 className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg transition"
               >
                 <Plus className="w-4 h-4" />
