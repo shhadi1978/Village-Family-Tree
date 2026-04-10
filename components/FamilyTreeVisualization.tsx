@@ -56,6 +56,7 @@ type TreeNodeUI = {
 
 const HORIZONTAL_GAP = 280;
 const VERTICAL_GAP = 220;
+const MARRIAGE_OFFSET_Y = 92;
 
 function getMarriageNodeId(memberId: string, spouseId: string) {
   return [memberId, spouseId].sort().join("__marriage__");
@@ -87,6 +88,22 @@ function countBranchUnits(node: TreeNodeUI): number {
   }, 0);
 }
 
+function getHorizontalGap(node: TreeNodeUI) {
+  const marriageCount = node.marriages.length;
+  const maxMarriageChildren = node.marriages.reduce(
+    (max, marriage) => Math.max(max, marriage.children.length),
+    0
+  );
+  const directChildrenCount = node.children.length;
+  const densityBoost = Math.max(maxMarriageChildren, directChildrenCount);
+
+  return (
+    HORIZONTAL_GAP +
+    Math.max(0, marriageCount - 1) * 48 +
+    Math.max(0, densityBoost - 2) * 24
+  );
+}
+
 function buildEdge(
   id: string,
   source: string,
@@ -99,7 +116,7 @@ function buildEdge(
     parent: { stroke: "#60a5fa", strokeWidth: 2 },
     child: { stroke: "#34d399", strokeWidth: 2 },
     sibling: { stroke: "#f59e0b", strokeWidth: 1.8, strokeDasharray: "6 4" },
-    spouse: { stroke: "#a78bfa", strokeWidth: 2 },
+    spouse: { stroke: "#e879f9", strokeWidth: 3, strokeDasharray: "10 6" },
   };
 
   const markerColor =
@@ -191,11 +208,12 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string, onRefr
 
   function placeSpouses(treeNode: TreeNodeUI, memberX: number, memberY: number) {
     const sortedMarriages = getSortedMarriageGroups(treeNode);
+    const localHorizontalGap = getHorizontalGap(treeNode);
 
     const marriageLayouts = sortedMarriages.map((marriage, index) => {
       const spouse = marriage.spouse;
-      const spouseX = memberX + (index + 1) * HORIZONTAL_GAP;
-      const marriageX = memberX + (index + 0.5) * HORIZONTAL_GAP;
+      const spouseX = memberX + (index + 1) * localHorizontalGap;
+      const marriageX = memberX + (index + 0.5) * localHorizontalGap;
       const marriageNodeId = spouse
         ? getMarriageNodeId(treeNode.member.id, spouse.member.id)
         : `${treeNode.member.id}__${marriage.marriageId}`;
@@ -204,7 +222,7 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string, onRefr
         ensureNode(spouse, spouseX, memberY);
       }
 
-      ensureMarriageNode(marriageNodeId, marriageX, memberY + 78);
+      ensureMarriageNode(marriageNodeId, marriageX, memberY + MARRIAGE_OFFSET_Y);
 
       ensureEdge(
         buildEdge(
@@ -282,6 +300,7 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string, onRefr
 
   function placeDescendants(treeNode: TreeNodeUI, centerX: number, levelY: number) {
     const memberId = treeNode.member.id;
+    const localHorizontalGap = getHorizontalGap(treeNode);
 
     if (processedMembers.has(memberId)) {
       ensureNode(treeNode, centerX, levelY);
@@ -302,11 +321,11 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string, onRefr
         (sum, child) => sum + countBranchUnits(child),
         0
       );
-      let cursorX = section.anchorX - ((totalUnits - 1) * HORIZONTAL_GAP) / 2;
+      let cursorX = section.anchorX - ((totalUnits - 1) * localHorizontalGap) / 2;
 
       section.children.forEach((child) => {
         const branchUnits = countBranchUnits(child);
-        const childCenterX = cursorX + ((branchUnits - 1) * HORIZONTAL_GAP) / 2;
+        const childCenterX = cursorX + ((branchUnits - 1) * localHorizontalGap) / 2;
         const childY = levelY + VERTICAL_GAP;
 
         placeDescendants(child, childCenterX, childY);
@@ -321,7 +340,7 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string, onRefr
           )
         );
 
-        cursorX += branchUnits * HORIZONTAL_GAP;
+        cursorX += branchUnits * localHorizontalGap;
       });
     });
   }
@@ -329,15 +348,16 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string, onRefr
   function placeFocusedTree(treeNode: TreeNodeUI) {
     const rootX = 0;
     const rootY = 0;
+    const localHorizontalGap = getHorizontalGap(treeNode);
     ensureNode(treeNode, rootX, rootY);
     processedMembers.add(treeNode.member.id);
     const spouseLayout = placeSpouses(treeNode, rootX, rootY);
     const childSections = getChildSections(treeNode, rootX, spouseLayout);
 
     const sortedParents = [...treeNode.parents].sort(compareTreeNodes);
-    const parentsStartX = rootX - ((sortedParents.length - 1) * HORIZONTAL_GAP) / 2;
+    const parentsStartX = rootX - ((sortedParents.length - 1) * localHorizontalGap) / 2;
     sortedParents.forEach((parent, index) => {
-      const parentX = parentsStartX + index * HORIZONTAL_GAP;
+      const parentX = parentsStartX + index * localHorizontalGap;
       const parentY = rootY - VERTICAL_GAP;
       ensureNode(parent, parentX, parentY);
       ensureEdge(
@@ -366,7 +386,7 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string, onRefr
         continue;
       }
 
-      const siblingX = rootX + (slot - Math.floor(siblingSlots / 2)) * HORIZONTAL_GAP;
+      const siblingX = rootX + (slot - Math.floor(siblingSlots / 2)) * localHorizontalGap;
       ensureNode(sibling, siblingX, siblingsY);
       ensureEdge(
         buildEdge(
@@ -387,11 +407,11 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string, onRefr
         (sum, child) => sum + countBranchUnits(child),
         0
       );
-      let cursorX = section.anchorX - ((Math.max(totalUnits, 1) - 1) * HORIZONTAL_GAP) / 2;
+      let cursorX = section.anchorX - ((Math.max(totalUnits, 1) - 1) * localHorizontalGap) / 2;
 
       section.children.forEach((child) => {
         const branchUnits = countBranchUnits(child);
-        const childCenterX = cursorX + ((branchUnits - 1) * HORIZONTAL_GAP) / 2;
+        const childCenterX = cursorX + ((branchUnits - 1) * localHorizontalGap) / 2;
         placeDescendants(child, childCenterX, descendantsStartY);
         ensureEdge(
           buildEdge(
@@ -403,7 +423,7 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string, onRefr
             "target-top"
           )
         );
-        cursorX += branchUnits * HORIZONTAL_GAP;
+        cursorX += branchUnits * localHorizontalGap;
       });
     });
   }
