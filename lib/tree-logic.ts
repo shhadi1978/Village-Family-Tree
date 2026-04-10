@@ -139,23 +139,32 @@ async function buildMarriageGroups(
   ];
 
   const spouseNodesByMarriageId = new Map<string, FamilyTreeNode | null>();
-  const spouseIdsByMarriageId = new Map<string, string>();
+  const spouseIdByPairKey = new Map<string, string>();
+  const marriageIdByPairKey = new Map<string, string>();
+
+  spouseRelationships.forEach((relationship) => {
+    const spouseId =
+      relationship.fromMemberId === member.id
+        ? relationship.toMemberId
+        : relationship.fromMemberId;
+
+    const pairKey = getSyntheticMarriageGroupId(member.id, spouseId);
+    spouseIdByPairKey.set(pairKey, spouseId);
+
+    if (relationship.marriage?.id) {
+      marriageIdByPairKey.set(pairKey, relationship.marriage.id);
+    } else if (!marriageIdByPairKey.has(pairKey)) {
+      marriageIdByPairKey.set(pairKey, pairKey);
+    }
+  });
 
   await Promise.all(
-    spouseRelationships.map(async (relationship) => {
-      const spouseId =
-        relationship.fromMemberId === member.id
-          ? relationship.toMemberId
-          : relationship.fromMemberId;
-      const marriageId =
-        relationship.marriage?.id ||
-        getSyntheticMarriageGroupId(member.id, spouseId);
+    Array.from(spouseIdByPairKey.entries()).map(async ([pairKey, spouseId]) => {
+      const marriageId = marriageIdByPairKey.get(pairKey) || pairKey;
 
-      if (!marriageId || spouseNodesByMarriageId.has(marriageId)) {
+      if (spouseNodesByMarriageId.has(marriageId)) {
         return;
       }
-
-      spouseIdsByMarriageId.set(marriageId, spouseId);
 
       if (visitedIds.has(spouseId)) {
         spouseNodesByMarriageId.set(marriageId, null);
@@ -176,6 +185,8 @@ async function buildMarriageGroups(
     })
   );
 
+  const spouseIdSet = new Set(Array.from(spouseIdByPairKey.values()));
+
   const childrenByMarriageId = new Map<string, FamilyTreeNode[]>();
   childRelationships.forEach((relationship, index) => {
     const childNode = childNodes[index];
@@ -186,16 +197,15 @@ async function buildMarriageGroups(
         (parentRelationship) =>
           parentRelationship.type === "PARENT" &&
           parentRelationship.fromMemberId !== member.id &&
-          Array.from(spouseIdsByMarriageId.values()).includes(
-            parentRelationship.fromMemberId
-          )
+          spouseIdSet.has(parentRelationship.fromMemberId)
       );
 
       if (counterpartParent?.fromMemberId) {
-        marriageId = getSyntheticMarriageGroupId(
+        const pairKey = getSyntheticMarriageGroupId(
           member.id,
           counterpartParent.fromMemberId
         );
+        marriageId = marriageIdByPairKey.get(pairKey) || pairKey;
       }
     }
 
