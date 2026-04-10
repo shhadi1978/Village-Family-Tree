@@ -13,7 +13,7 @@ export async function ensureMarriageUnit(
   villageId: string,
   memberAId: string,
   memberBId: string,
-  tx: typeof db = db
+  tx: any = db
 ) {
   if (memberAId === memberBId) {
     throw new Error("Marriage partners cannot be the same member");
@@ -58,7 +58,7 @@ async function inferMarriageIdForParentRelationship(
   parentId: string,
   childId: string,
   villageId: string,
-  tx: typeof db = db
+  tx: any = db
 ) {
   const existingParents = await tx.relationship.findMany({
     where: {
@@ -111,7 +111,7 @@ async function inferMarriageIdForParentRelationship(
 async function syncSiblingParentMarriageLinks(
   childId: string,
   marriageId: string | null,
-  tx: typeof db = db
+  tx: any = db
 ) {
   if (!marriageId) {
     return;
