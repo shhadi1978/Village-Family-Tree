@@ -89,6 +89,12 @@ export async function GET(req: NextRequest) {
  * POST /api/members
  * Create a new family member
  * Requires authentication and family admin rights
+ * 
+ * Body params:
+ * - firstName, lastName, gender, familyId, villageId (required)
+ * - parentId OR fatherId (for children) - creates parent relationship
+ * - spouseId (for spouse) - creates spouse relationship
+ * - Other optional: nickname, dateOfBirth, dateOfDeath, bio, photoUrl
  */
 export async function POST(req: NextRequest) {
   try {
@@ -111,6 +117,8 @@ export async function POST(req: NextRequest) {
       villageId,
       fatherId,
       motherId,
+      parentId,
+      spouseId,
       isFounder,
       dateOfBirth,
       dateOfDeath,
@@ -136,9 +144,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!fatherId) {
+    // Either parentId/fatherId (for children) or spouseId (for spouse) must be provided
+    if (!parentId && !fatherId && !spouseId) {
       return NextResponse.json(
-        { error: "fatherId is required" },
+        { error: "Either parentId, fatherId, or spouseId is required" },
         { status: 400 }
       );
     }
@@ -164,21 +173,45 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const member = await memberService.createMember({
+    // Create member with appropriate relationship
+    const resolvedParentId = parentId || fatherId;
+    const memberData = {
       firstName,
       lastName,
       nickname: typeof nickname === "string" ? nickname.trim() || undefined : undefined,
       gender,
       familyId,
       villageId,
-      fatherId,
-      motherId,
+      fatherId: spouseId ? undefined : resolvedParentId,
+      motherId: undefined,
       isFounder: false,
       dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
       dateOfDeath: dateOfDeath ? new Date(dateOfDeath) : undefined,
       bio,
       photoUrl,
-    });
+    };
+
+    let member;
+    
+    if (spouseId) {
+      // Creating spouse: just create the member without parent relationship
+      member = await memberService.createMember({
+        ...memberData,
+        fatherId: undefined,
+      });
+
+      // Create spouse relationship
+      const relationshipService = await import("@/lib/services/relationship");
+      await relationshipService.createRelationship({
+        fromMemberId: spouseId,
+        toMemberId: member.id,
+        type: "SPOUSE",
+        villageId,
+      });
+    } else {
+      // Creating child: use existing logic
+      member = await memberService.createMember(memberData as any);
+    }
 
     return NextResponse.json({ data: member }, { status: 201 });
   } catch (error) {
@@ -201,6 +234,7 @@ export async function POST(req: NextRequest) {
     }
 
     const status = errorMessage.includes("already exists") ||
+      errorMessage.includes("parentId") ||
       errorMessage.includes("fatherId") ||
       errorMessage.includes("Founder") ||
       errorMessage.includes("Father") ||

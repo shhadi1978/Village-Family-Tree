@@ -337,6 +337,7 @@ export default function FamilyTreePage() {
               treeData={treeData}
               familyName={family?.name}
               loading={false}
+              onRefresh={() => setTreeReloadTick(prev => prev + 1)}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">

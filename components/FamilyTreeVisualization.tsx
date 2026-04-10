@@ -26,6 +26,7 @@ interface FamilyTreeVisualizationProps {
   treeData: TreeNodeUI | null;
   loading?: boolean;
   familyName?: string;
+  onRefresh?: () => void;
 }
 
 type TreeMemberUI = {
@@ -133,7 +134,7 @@ function buildEdge(
 /**
  * Convert family tree data to ReactFlow nodes and edges
  */
-function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string) {
+function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string, onRefresh?: () => void) {
   const nodeMap = new Map<string, Node>();
   const edgeMap = new Map<string, Edge>();
   const processedMembers = new Set<string>();
@@ -149,7 +150,7 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string) {
 
     nodeMap.set(memberId, {
       id: memberId,
-      data: { member: treeNode.member, familyName },
+      data: { member: treeNode.member, familyName, onRefresh },
       position: { x, y },
       type: "member",
       draggable: true,
@@ -418,6 +419,7 @@ function FamilyTreeFlowCanvas({
   treeData,
   loading = false,
   familyName,
+  onRefresh,
 }: FamilyTreeVisualizationProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -425,7 +427,7 @@ function FamilyTreeFlowCanvas({
 
   useEffect(() => {
     if (treeData && !loading) {
-      const { nodes: newNodes, edges: newEdges } = convertTreeToGraph(treeData, familyName);
+      const { nodes: newNodes, edges: newEdges } = convertTreeToGraph(treeData, familyName, onRefresh);
 
       setNodes(newNodes);
       setEdges(newEdges);

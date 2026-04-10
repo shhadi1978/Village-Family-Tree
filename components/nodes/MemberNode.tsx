@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { Handle, Position } from "reactflow";
 import { User } from "lucide-react";
 import { genderLabelAr, formatDateAr } from "@/lib/i18n/format";
 import { getMemberDisplayName } from "@/lib/member-display";
 import { isFamilyFounder } from "@/lib/member-founder";
+import MemberDetailDialog from "@/components/dialogs/MemberDetailDialog";
 
 type MemberNodeData = {
   id: string;
@@ -16,17 +18,21 @@ type MemberNodeData = {
   dateOfBirth?: string | Date | null;
   dateOfDeath?: string | Date | null;
   photoUrl?: string | null;
+  familyId?: string;
+  villageId?: string;
 };
 
 interface MemberNodeProps {
   data: {
     member: MemberNodeData;
     familyName?: string;
+    onRefresh?: () => void;
   };
 }
 
 export default function MemberNode({ data }: MemberNodeProps) {
-  const { member, familyName } = data;
+  const { member, familyName, onRefresh } = data;
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
   const founder = isFamilyFounder(member, familyName);
   
   // Safely handle gender value
@@ -52,14 +58,21 @@ export default function MemberNode({ data }: MemberNodeProps) {
       ? "text-blue-300"
       : "text-slate-300";
 
+  const handleNodeClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsDetailDialogOpen(true);
+  };
+
   return (
-    <div
-      className={`rounded-lg p-3 w-48 shadow-lg transition border-2 ${
-        founder
-          ? "founder-node-card"
-          : memberCardTone
-      }`}
-    >
+    <>
+      <div
+        onClick={handleNodeClick}
+        className={`rounded-lg p-3 w-48 shadow-lg transition border-2 cursor-pointer hover:shadow-xl ${
+          founder
+            ? "founder-node-card"
+            : memberCardTone
+        }`}
+      >
       {/* Connection points */}
       <Handle id="target-top" type="target" position={Position.Top} />
       <Handle id="source-top" type="source" position={Position.Top} />
@@ -141,6 +154,16 @@ export default function MemberNode({ data }: MemberNodeProps) {
           </span>
         </div>
       )}
-    </div>
+      </div>
+
+      {/* Member Detail Dialog */}
+      <MemberDetailDialog
+        member={member as any}
+        isOpen={isDetailDialogOpen}
+        onClose={() => setIsDetailDialogOpen(false)}
+        onRefresh={onRefresh || (() => window.location.reload())}
+        familyName={familyName}
+      />
+    </>
   );
 }
