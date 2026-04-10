@@ -101,6 +101,10 @@ async function inferMarriageIdForParentRelationship(
     tx
   );
 
+  if (!marriage) {
+    return null;
+  }
+
   return marriage.id;
 }
 
