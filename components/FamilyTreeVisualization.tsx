@@ -62,6 +62,8 @@ type ChildSection = {
   sourceId: string;
   anchorX: number;
   children: TreeNodeUI[];
+  sourceType: "direct" | "marriage";
+  label?: string;
 };
 
 const HORIZONTAL_GAP = 280;
@@ -140,7 +142,7 @@ function buildEdge(
   id: string,
   source: string,
   target: string,
-  relation: "parent" | "child" | "sibling" | "spouse" | "bus",
+  relation: "parent" | "child" | "sibling" | "spouse" | "busDirect" | "busMarriage",
   sourceHandle?: string,
   targetHandle?: string
 ): Edge {
@@ -149,7 +151,8 @@ function buildEdge(
     child: { stroke: "#34d399", strokeWidth: 2 },
     sibling: { stroke: "#f59e0b", strokeWidth: 1.8, strokeDasharray: "6 4" },
     spouse: { stroke: "#e879f9", strokeWidth: 3, strokeDasharray: "10 6" },
-    bus: { stroke: "#4ade80", strokeWidth: 2.4 },
+    busDirect: { stroke: "#4ade80", strokeWidth: 2.4 },
+    busMarriage: { stroke: "#f472b6", strokeWidth: 2.4, strokeDasharray: "8 4" },
   };
 
   const markerColor =
@@ -165,7 +168,7 @@ function buildEdge(
     id,
     source,
     target,
-    type: relation === "bus" ? "straight" : "smoothstep",
+    type: relation === "busDirect" || relation === "busMarriage" ? "straight" : "smoothstep",
     animated: false,
     sourceHandle,
     targetHandle,
@@ -236,20 +239,22 @@ function convertTreeToGraph(
     centerX: number,
     y: number,
     width: number,
-    handleOffsets: number[]
+    handleOffsets: number[],
+    label?: string,
+    tone: "direct" | "marriage" = "direct"
   ) {
     const existing = nodeMap.get(id);
     const position = { x: centerX - width / 2, y };
 
     if (existing) {
       existing.position = position;
-      existing.data = { width, handleOffsets };
+      existing.data = { width, handleOffsets, label, tone };
       return;
     }
 
     nodeMap.set(id, {
       id,
-      data: { width, handleOffsets },
+      data: { width, handleOffsets, label, tone },
       position,
       type: "bus",
       draggable: false,
@@ -318,6 +323,7 @@ function convertTreeToGraph(
         marriageNodeId,
         anchorX: marriageX,
         children: [...marriage.children].sort(compareTreeNodes),
+        spouseLabel: spouse?.member.fullName || null,
       };
     });
 
@@ -337,6 +343,8 @@ function convertTreeToGraph(
         sourceId: treeNode.member.id,
         anchorX: memberX,
         children: directChildren,
+        sourceType: "direct",
+        label: treeNode.marriages.length > 0 ? "أبناء غير مرتبطين بزواج محدد" : undefined,
       });
     }
 
@@ -349,6 +357,8 @@ function convertTreeToGraph(
         sourceId: layout.marriageNodeId,
         anchorX: layout.anchorX,
         children: layout.children,
+        sourceType: "marriage",
+        label: layout.spouseLabel ? `أبناء ${layout.spouseLabel}` : "أبناء هذا الزواج",
       });
     });
 
@@ -392,13 +402,21 @@ function convertTreeToGraph(
         return Math.max(8, Math.min(92, ratio));
       });
 
-      ensureBusNode(busNodeId, busCenterX, levelY + BUS_OFFSET_Y, busWidth, handleOffsets);
+      ensureBusNode(
+        busNodeId,
+        busCenterX,
+        levelY + BUS_OFFSET_Y,
+        busWidth,
+        handleOffsets,
+        section.label,
+        section.sourceType
+      );
       ensureEdge(
         buildEdge(
           `${section.sourceId}-${busNodeId}-bus`,
           section.sourceId,
           busNodeId,
-          "bus",
+          section.sourceType === "marriage" ? "busMarriage" : "busDirect",
           "source-bottom",
           "target-top"
         )
