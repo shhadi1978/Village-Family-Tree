@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Plus, Trash2 } from "lucide-react";
+import { X, Plus, Trash2, Search, UserCheck } from "lucide-react";
 import { genderLabelAr, formatDateAr } from "@/lib/i18n/format";
 import { getMemberDisplayName } from "@/lib/member-display";
 
@@ -38,6 +38,11 @@ export default function MemberDetailDialog({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [childName, setChildName] = useState("");
   const [spouseName, setSpouseName] = useState("");
+  const [motherSearch, setMotherSearch] = useState("");
+  const [motherCandidates, setMotherCandidates] = useState<Member[]>([]);
+  const [selectedMotherId, setSelectedMotherId] = useState<string>("");
+  const [currentMotherName, setCurrentMotherName] = useState<string | null>(null);
+  const [hasMother, setHasMother] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -47,6 +52,42 @@ export default function MemberDetailDialog({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (!isOpen || !member) {
+      return;
+    }
+
+    const loadMotherStatus = async () => {
+      try {
+        const response = await fetch(`/api/relationships?memberId=${member.id}&type=PARENT`);
+        if (!response.ok) {
+          return;
+        }
+
+        const result = await response.json();
+        const parents = result?.data?.parents || [];
+        const motherRelation = parents.find(
+          (rel: any) => rel?.fromMember?.gender === "FEMALE"
+        );
+
+        if (motherRelation?.fromMember?.fullName) {
+          setHasMother(true);
+          setCurrentMotherName(motherRelation.fromMember.fullName);
+        } else {
+          setHasMother(false);
+          setCurrentMotherName(null);
+        }
+      } catch {
+        // Keep UI usable even if relationship status fails to load.
+      }
+    };
+
+    setMotherSearch("");
+    setMotherCandidates([]);
+    setSelectedMotherId("");
+    loadMotherStatus();
+  }, [isOpen, member]);
 
   if (!isOpen || !member) return null;
 
@@ -188,6 +229,84 @@ export default function MemberDetailDialog({
     }
   };
 
+  const handleSearchMothers = async () => {
+    if (!member) return;
+    const query = motherSearch.trim();
+    if (!query) {
+      setMotherCandidates([]);
+      return;
+    }
+
+    setLoadingAction("search-mother");
+    setError(null);
+
+    try {
+      const response = await fetch(
+        `/api/members?villageId=${member.villageId}&search=${encodeURIComponent(query)}`
+      );
+
+      if (!response.ok) {
+        throw new Error("تعذر البحث عن الأمهات المرشحات");
+      }
+
+      const result = await response.json();
+      const members = Array.isArray(result?.data) ? result.data : [];
+      const femaleCandidates = members.filter(
+        (candidate: Member) =>
+          candidate.id !== member.id &&
+          String(candidate.gender || "").toUpperCase() === "FEMALE"
+      );
+
+      setMotherCandidates(femaleCandidates);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "خطأ غير معروف أثناء البحث");
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleAssignMother = async () => {
+    if (!member || !selectedMotherId) {
+      setError("اختر الأم أولاً من نتائج البحث");
+      return;
+    }
+
+    setLoadingAction("assign-mother");
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      const response = await fetch("/api/relationships", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fromMemberId: selectedMotherId,
+          toMemberId: member.id,
+          type: "PARENT",
+          villageId: member.villageId,
+        }),
+      });
+
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(result?.error || "تعذر ربط الأم");
+      }
+
+      const linkedMother = motherCandidates.find((candidate) => candidate.id === selectedMotherId);
+      setCurrentMotherName(linkedMother?.fullName || null);
+      setHasMother(true);
+      setMotherCandidates([]);
+      setSelectedMotherId("");
+      setMotherSearch("");
+      setSuccessMessage("تم ربط الأم بنجاح");
+      onRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "خطأ غير معروف");
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50" dir="rtl">
       <button
@@ -251,6 +370,65 @@ export default function MemberDetailDialog({
           {successMessage && <div className="p-3 bg-emerald-900/30 border border-emerald-700 rounded text-emerald-300 text-sm">{successMessage}</div>}
 
           <div className="space-y-2 pt-2">
+            <div className="rounded-lg border border-slate-700 p-3 space-y-2">
+              <div className="flex items-center gap-2 text-slate-200 text-sm">
+                <UserCheck size={16} />
+                <span>تعيين أم</span>
+              </div>
+
+              {hasMother ? (
+                <div className="text-xs rounded border border-emerald-700 bg-emerald-900/20 text-emerald-300 px-3 py-2">
+                  الأم الحالية: {currentMotherName || "مربوطة"}
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs text-slate-400">هذا الفرد لا يملك أم مرتبطة بعد.</p>
+                  <div className="flex gap-2">
+                    <input
+                      value={motherSearch}
+                      onChange={(e) => setMotherSearch(e.target.value)}
+                      placeholder="ابحث باسم الأم"
+                      className="flex-1 px-3 py-2 rounded bg-slate-900 border border-slate-600 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <button
+                      onClick={handleSearchMothers}
+                      disabled={loadingAction === "search-mother" || !motherSearch.trim()}
+                      className="px-3 py-2 rounded bg-emerald-700 hover:bg-emerald-600 disabled:bg-slate-600 text-white text-sm"
+                    >
+                      <Search size={16} />
+                    </button>
+                  </div>
+
+                  {motherCandidates.length > 0 && (
+                    <div className="max-h-36 overflow-y-auto border border-slate-700 rounded">
+                      {motherCandidates.map((candidate) => (
+                        <button
+                          key={candidate.id}
+                          type="button"
+                          onClick={() => setSelectedMotherId(candidate.id)}
+                          className={`w-full text-right px-3 py-2 text-sm border-b last:border-b-0 border-slate-700 transition ${
+                            selectedMotherId === candidate.id
+                              ? "bg-emerald-900/40 text-emerald-300"
+                              : "text-slate-200 hover:bg-slate-700/70"
+                          }`}
+                        >
+                          {candidate.fullName}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleAssignMother}
+                    disabled={loadingAction === "assign-mother" || !selectedMotherId}
+                    className="w-full px-3 py-2 rounded bg-emerald-700 hover:bg-emerald-600 disabled:bg-slate-600 text-white text-sm"
+                  >
+                    {loadingAction === "assign-mother" ? "جاري الربط..." : "ربط الأم المختارة"}
+                  </button>
+                </>
+              )}
+            </div>
+
             <div className="rounded-lg border border-slate-700 p-3 space-y-2">
               <p className="text-xs text-slate-300">إضافة طفل جديد</p>
               <input
