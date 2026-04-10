@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Plus, Trash2, Search, UserCheck } from "lucide-react";
 import { genderLabelAr, formatDateAr } from "@/lib/i18n/format";
 import { getMemberDisplayName } from "@/lib/member-display";
@@ -307,7 +308,7 @@ export default function MemberDetailDialog({
     }
   };
 
-  return (
+  const dialogContent = (
     <div className="fixed inset-0 z-50" dir="rtl">
       <button
         type="button"
@@ -509,4 +510,10 @@ export default function MemberDetailDialog({
       </div>
     </div>
   );
+
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return createPortal(dialogContent, document.body);
 }
