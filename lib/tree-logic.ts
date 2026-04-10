@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { isMarriageSchemaRuntimeError } from "./marriage-schema";
 
 type GenderValue = "MALE" | "FEMALE" | "OTHER";
 type RelationshipTypeValue = "PARENT" | "SPOUSE";
@@ -8,6 +9,7 @@ export interface MemberRecord {
   firstName: string;
   lastName: string;
   nickname?: string | null;
+  isFounder: boolean;
   fullName: string;
   gender: GenderValue;
   dateOfBirth?: Date | null;
@@ -26,8 +28,15 @@ interface RelationshipRecord {
   fromMemberId: string;
   toMemberId: string;
   villageId: string;
+  marriage?: { id: string } | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface FamilyTreeMarriageGroup {
+  marriageId: string;
+  spouse: FamilyTreeNode | null;
+  children: FamilyTreeNode[];
 }
 
 /**
@@ -51,6 +60,7 @@ export interface FamilyTreeNode {
   siblings: FamilyTreeNode[];
   children: FamilyTreeNode[];
   spouses: FamilyTreeNode[];
+  marriages: FamilyTreeMarriageGroup[];
 }
 
 function toShallowTreeNode(member: MemberWithRelationships): FamilyTreeNode {
@@ -60,6 +70,7 @@ function toShallowTreeNode(member: MemberWithRelationships): FamilyTreeNode {
     siblings: [],
     children: [],
     spouses: [],
+    marriages: [],
   };
 }
 
@@ -84,6 +95,10 @@ function getUniqueSpouseIds(member: MemberWithRelationships): string[] {
   });
 
   return Array.from(uniqueSpouses);
+}
+
+function getSyntheticMarriageGroupId(memberAId: string, memberBId: string) {
+  return [memberAId, memberBId].sort().join("__legacy_marriage__");
 }
 
 async function fetchShallowSpouseNodes(
@@ -111,6 +126,102 @@ async function fetchShallowSpouseNodes(
   return spouses;
 }
 
+async function buildMarriageGroups(
+  member: MemberWithRelationships,
+  childRelationships: Array<RelationshipRecord & { toMember: MemberRecord }>,
+  childNodes: Array<FamilyTreeNode | null>,
+  visitedIds: Set<string>,
+  mode: TreeViewMode
+): Promise<FamilyTreeMarriageGroup[]> {
+  const spouseRelationships = [
+    ...member.relationshipsAsFrom.filter((rel) => rel.type === "SPOUSE"),
+    ...member.relationshipsAsTo.filter((rel) => rel.type === "SPOUSE"),
+  ];
+
+  const spouseNodesByMarriageId = new Map<string, FamilyTreeNode | null>();
+  const spouseIdsByMarriageId = new Map<string, string>();
+
+  await Promise.all(
+    spouseRelationships.map(async (relationship) => {
+      const spouseId =
+        relationship.fromMemberId === member.id
+          ? relationship.toMemberId
+          : relationship.fromMemberId;
+      const marriageId =
+        relationship.marriage?.id ||
+        getSyntheticMarriageGroupId(member.id, spouseId);
+
+      if (!marriageId || spouseNodesByMarriageId.has(marriageId)) {
+        return;
+      }
+
+      spouseIdsByMarriageId.set(marriageId, spouseId);
+
+      if (visitedIds.has(spouseId)) {
+        spouseNodesByMarriageId.set(marriageId, null);
+        return;
+      }
+
+      const spouseMember = await fetchMemberWithRelationships(spouseId);
+      if (!spouseMember) {
+        spouseNodesByMarriageId.set(marriageId, null);
+        return;
+      }
+
+      if (mode === "FULL") {
+        visitedIds.add(spouseId);
+      }
+
+      spouseNodesByMarriageId.set(marriageId, toShallowTreeNode(spouseMember));
+    })
+  );
+
+  const childrenByMarriageId = new Map<string, FamilyTreeNode[]>();
+  childRelationships.forEach((relationship, index) => {
+    const childNode = childNodes[index];
+    let marriageId = relationship.marriage?.id || null;
+
+    if (!marriageId && childNode) {
+      const counterpartParent = childNode.member.relationshipsAsTo.find(
+        (parentRelationship) =>
+          parentRelationship.type === "PARENT" &&
+          parentRelationship.fromMemberId !== member.id &&
+          Array.from(spouseIdsByMarriageId.values()).includes(
+            parentRelationship.fromMemberId
+          )
+      );
+
+      if (counterpartParent?.fromMemberId) {
+        marriageId = getSyntheticMarriageGroupId(
+          member.id,
+          counterpartParent.fromMemberId
+        );
+      }
+    }
+
+    if (!marriageId || !childNode) {
+      return;
+    }
+
+    const existing = childrenByMarriageId.get(marriageId) || [];
+    existing.push(childNode);
+    childrenByMarriageId.set(marriageId, existing);
+  });
+
+  const marriageIds = Array.from(
+    new Set([
+      ...Array.from(spouseNodesByMarriageId.keys()),
+      ...Array.from(childrenByMarriageId.keys()),
+    ])
+  );
+
+  return marriageIds.map((marriageId) => ({
+    marriageId,
+    spouse: spouseNodesByMarriageId.get(marriageId) || null,
+    children: childrenByMarriageId.get(marriageId) || [],
+  }));
+}
+
 type TreeViewMode = "FULL" | "DESCENDANTS";
 
 export type FocusedTreeOptions = {
@@ -125,83 +236,113 @@ export type FocusedTreeOptions = {
 async function fetchMemberWithRelationships(
   memberId: string
 ): Promise<MemberWithRelationships | null> {
-  return db.member.findUnique({
-    where: { id: memberId },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      nickname: true,
-      fullName: true,
-      gender: true,
-      dateOfBirth: true,
-      dateOfDeath: true,
-      bio: true,
-      photoUrl: true,
-      familyId: true,
-      villageId: true,
-      createdAt: true,
-      updatedAt: true,
-      relationshipsAsFrom: {
-        select: {
-          id: true,
-          type: true,
-          fromMemberId: true,
-          toMemberId: true,
-          villageId: true,
-          createdAt: true,
-          updatedAt: true,
-          toMember: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              nickname: true,
-              fullName: true,
-              gender: true,
-              dateOfBirth: true,
-              dateOfDeath: true,
-              bio: true,
-              photoUrl: true,
-              familyId: true,
-              villageId: true,
-              createdAt: true,
-              updatedAt: true,
+  const baseSelect = {
+    id: true,
+    firstName: true,
+    lastName: true,
+    nickname: true,
+    isFounder: true,
+    fullName: true,
+    gender: true,
+    dateOfBirth: true,
+    dateOfDeath: true,
+    bio: true,
+    photoUrl: true,
+    familyId: true,
+    villageId: true,
+    createdAt: true,
+    updatedAt: true,
+  };
+
+  try {
+    const member = await (db.member as any).findUnique({
+      where: { id: memberId },
+      select: {
+        ...baseSelect,
+        relationshipsAsFrom: {
+          select: {
+            id: true,
+            type: true,
+            fromMemberId: true,
+            toMemberId: true,
+            villageId: true,
+            createdAt: true,
+            updatedAt: true,
+            marriage: {
+              select: {
+                id: true,
+              },
+            },
+            toMember: {
+              select: baseSelect,
+            },
+          },
+        },
+        relationshipsAsTo: {
+          select: {
+            id: true,
+            type: true,
+            fromMemberId: true,
+            toMemberId: true,
+            villageId: true,
+            createdAt: true,
+            updatedAt: true,
+            marriage: {
+              select: {
+                id: true,
+              },
+            },
+            fromMember: {
+              select: baseSelect,
             },
           },
         },
       },
-      relationshipsAsTo: {
-        select: {
-          id: true,
-          type: true,
-          fromMemberId: true,
-          toMemberId: true,
-          villageId: true,
-          createdAt: true,
-          updatedAt: true,
-          fromMember: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              nickname: true,
-              fullName: true,
-              gender: true,
-              dateOfBirth: true,
-              dateOfDeath: true,
-              bio: true,
-              photoUrl: true,
-              familyId: true,
-              villageId: true,
-              createdAt: true,
-              updatedAt: true,
+    });
+
+    return member as MemberWithRelationships | null;
+  } catch (error) {
+    if (!isMarriageSchemaRuntimeError(error)) {
+      throw error;
+    }
+
+    const legacyMember = await (db.member as any).findUnique({
+      where: { id: memberId },
+      select: {
+        ...baseSelect,
+        relationshipsAsFrom: {
+          select: {
+            id: true,
+            type: true,
+            fromMemberId: true,
+            toMemberId: true,
+            villageId: true,
+            createdAt: true,
+            updatedAt: true,
+            toMember: {
+              select: baseSelect,
+            },
+          },
+        },
+        relationshipsAsTo: {
+          select: {
+            id: true,
+            type: true,
+            fromMemberId: true,
+            toMemberId: true,
+            villageId: true,
+            createdAt: true,
+            updatedAt: true,
+            fromMember: {
+              select: baseSelect,
             },
           },
         },
       },
-    },
-  });
+    });
+
+    return legacyMember as MemberWithRelationships | null;
+  }
 }
 
 /**
@@ -270,13 +411,27 @@ export async function fetchFamilyTree(
         fetchFamilyTree(rel.toMemberId, maxDepth, visitedIds, currentDepth + 1, mode)
       )
     );
-    const children: FamilyTreeNode[] = childNodes.filter(
+    const allChildNodes: FamilyTreeNode[] = childNodes.filter(
       (node): node is FamilyTreeNode => !!node
     );
 
-    // Recursively fetch spouses (depth + 1)
-    const spouses =
-      mode === "FULL" ? await fetchShallowSpouseNodes(member, visitedIds) : [];
+    const marriages = await buildMarriageGroups(
+      member,
+      childRelationships,
+      childNodes,
+      visitedIds,
+      mode
+    );
+    const groupedChildIds = new Set(
+      marriages.flatMap((marriage) => marriage.children.map((child) => child.member.id))
+    );
+    const children = allChildNodes.filter(
+      (child) => !groupedChildIds.has(child.member.id)
+    );
+
+    const spouses = marriages
+      .map((marriage) => marriage.spouse)
+      .filter((spouse): spouse is FamilyTreeNode => !!spouse);
 
     return {
       member,
@@ -284,6 +439,7 @@ export async function fetchFamilyTree(
       siblings: [],
       children,
       spouses,
+      marriages,
     };
   } catch (error) {
     console.error(`Error fetching family tree for member ${memberId}:`, error);
@@ -334,6 +490,7 @@ async function fetchSiblingNodes(
       siblings: [],
       children: [],
       spouses: [],
+      marriages: [],
     }));
 }
 
@@ -364,7 +521,7 @@ export async function fetchFocusedFamilyTree(
   const descendantsTree = includeDescendants
     ? await fetchFamilyTree(memberId, maxDepth, new Set(), 0, "DESCENDANTS")
     : null;
-  const spouses = await fetchShallowSpouseNodes(member);
+  const spouses = descendantsTree?.spouses || (await fetchShallowSpouseNodes(member));
 
   return {
     member,
@@ -372,6 +529,7 @@ export async function fetchFocusedFamilyTree(
     siblings,
     children: descendantsTree?.children || [],
     spouses,
+    marriages: descendantsTree?.marriages || [],
   };
 }
 
@@ -395,6 +553,12 @@ export function flattenFamilyTree(node: FamilyTreeNode | null): MemberRecord[] {
     queue.push(...current.parents);
     queue.push(...current.children);
     queue.push(...current.spouses);
+    queue.push(...current.marriages.flatMap((marriage) => marriage.children));
+    queue.push(
+      ...current.marriages
+        .map((marriage) => marriage.spouse)
+        .filter((spouse): spouse is FamilyTreeNode => !!spouse)
+    );
   }
 
   return Array.from(members.values());

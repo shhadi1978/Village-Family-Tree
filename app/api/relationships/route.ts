@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { fromMemberId, toMemberId, type, villageId, replaceExistingParent } = body;
+    const { fromMemberId, toMemberId, type, villageId, replaceExistingParent, marriageId } = body;
 
     // Validate required fields
     if (!fromMemberId || !toMemberId || !type || !villageId) {
@@ -186,6 +186,7 @@ export async function POST(req: NextRequest) {
       type,
       villageId,
       replaceExistingParent: Boolean(replaceExistingParent),
+      marriageId: typeof marriageId === "string" ? marriageId.trim() || null : null,
     });
 
     return NextResponse.json({ data: relationship }, { status: 201 });

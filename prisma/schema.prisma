@@ -36,6 +36,7 @@ model Village {
   // Relations
   families      Family[]
   members       Member[]
+  marriages     Marriage[]
   relationships Relationship[]
 
   @@index([slug])
@@ -108,11 +109,34 @@ model Member {
   // Relationships where this member is the "to"
   relationshipsAsTo       Relationship[] @relation("ToMember")
 
+  marriagesAsPartnerA     Marriage[]     @relation("MarriagePartnerA")
+  marriagesAsPartnerB     Marriage[]     @relation("MarriagePartnerB")
+
   @@index([villageId])
   @@index([familyId])
   @@index([fullName])
   @@index([nickname])
   @@index([isFounder])
+}
+
+model Marriage {
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  villageId     String
+  partnerAId    String
+  partnerBId    String
+
+  village       Village   @relation(fields: [villageId], references: [id], onDelete: Cascade)
+  partnerA      Member    @relation("MarriagePartnerA", fields: [partnerAId], references: [id], onDelete: Cascade)
+  partnerB      Member    @relation("MarriagePartnerB", fields: [partnerBId], references: [id], onDelete: Cascade)
+  relationships Relationship[]
+
+  @@unique([partnerAId, partnerBId])
+  @@index([villageId])
+  @@index([partnerAId])
+  @@index([partnerBId])
 }
 
 // Relationship Model: The core relationship connector
@@ -127,11 +151,13 @@ model Relationship {
   fromMemberId  String
   toMemberId    String
   villageId     String
+  marriageId    String?
 
   // Relations
   fromMember    Member    @relation("FromMember", fields: [fromMemberId], references: [id], onDelete: Cascade)
   toMember      Member    @relation("ToMember", fields: [toMemberId], references: [id], onDelete: Cascade)
   village       Village   @relation(fields: [villageId], references: [id], onDelete: Cascade)
+  marriage      Marriage? @relation(fields: [marriageId], references: [id], onDelete: SetNull)
 
   // Unique constraints to prevent duplicate relationships
   // A member cannot have two PARENT relationships to the same child
@@ -140,4 +166,5 @@ model Relationship {
   @@index([fromMemberId])
   @@index([toMemberId])
   @@index([villageId])
+  @@index([marriageId])
 }

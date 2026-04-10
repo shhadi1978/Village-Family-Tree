@@ -1,6 +1,128 @@
 import { db } from "@/lib/db";
+import { isMarriageSchemaRuntimeError } from "@/lib/marriage-schema";
 
 type RelationshipTypeValue = "PARENT" | "SPOUSE";
+
+function getCanonicalMarriagePartners(memberAId: string, memberBId: string) {
+  return memberAId < memberBId
+    ? { partnerAId: memberAId, partnerBId: memberBId }
+    : { partnerAId: memberBId, partnerBId: memberAId };
+}
+
+export async function ensureMarriageUnit(
+  villageId: string,
+  memberAId: string,
+  memberBId: string,
+  tx: typeof db = db
+) {
+  if (memberAId === memberBId) {
+    throw new Error("Marriage partners cannot be the same member");
+  }
+
+  const { partnerAId, partnerBId } = getCanonicalMarriagePartners(
+    memberAId,
+    memberBId
+  );
+
+  try {
+    const existing = await tx.marriage.findUnique({
+      where: {
+        partnerAId_partnerBId: {
+          partnerAId,
+          partnerBId,
+        },
+      },
+    });
+
+    if (existing) {
+      return existing;
+    }
+
+    return tx.marriage.create({
+      data: {
+        villageId,
+        partnerAId,
+        partnerBId,
+      },
+    });
+  } catch (error) {
+    if (isMarriageSchemaRuntimeError(error)) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+async function inferMarriageIdForParentRelationship(
+  parentId: string,
+  childId: string,
+  villageId: string,
+  tx: typeof db = db
+) {
+  const existingParents = await tx.relationship.findMany({
+    where: {
+      toMemberId: childId,
+      type: "PARENT",
+      fromMemberId: { not: parentId },
+    },
+    include: {
+      fromMember: {
+        select: {
+          id: true,
+          gender: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const parent = await tx.member.findUnique({
+    where: { id: parentId },
+    select: { gender: true },
+  });
+
+  if (!parent || parent.gender === "OTHER") {
+    return null;
+  }
+
+  const counterpart = existingParents.find(
+    (relationship) => relationship.fromMember?.gender !== parent.gender
+  );
+
+  if (!counterpart?.fromMemberId) {
+    return null;
+  }
+
+  const marriage = await ensureMarriageUnit(
+    villageId,
+    parentId,
+    counterpart.fromMemberId,
+    tx
+  );
+
+  return marriage.id;
+}
+
+async function syncSiblingParentMarriageLinks(
+  childId: string,
+  marriageId: string | null,
+  tx: typeof db = db
+) {
+  if (!marriageId) {
+    return;
+  }
+
+  await tx.relationship.updateMany({
+    where: {
+      toMemberId: childId,
+      type: "PARENT",
+    },
+    data: {
+      marriageId,
+    },
+  });
+}
 
 /**
  * Create a relationship between two members
@@ -13,8 +135,32 @@ export async function createRelationship(
     type: RelationshipTypeValue;
     villageId: string;
     replaceExistingParent?: boolean;
+    marriageId?: string | null;
   }
 ) {
+  if (data.type === "SPOUSE") {
+    const existingSpouseRelationship = await db.relationship.findFirst({
+      where: {
+        type: "SPOUSE",
+        OR: [
+          {
+            fromMemberId: data.fromMemberId,
+            toMemberId: data.toMemberId,
+          },
+          {
+            fromMemberId: data.toMemberId,
+            toMemberId: data.fromMemberId,
+          },
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (existingSpouseRelationship) {
+      throw new Error("Relationship already exists for the selected member IDs");
+    }
+  }
+
   const existingExactRelationship = await db.relationship.findFirst({
     where: {
       fromMemberId: data.fromMemberId,
@@ -54,6 +200,24 @@ export async function createRelationship(
     toMember.villageId !== data.villageId
   ) {
     throw new Error("Both members must be in the same village");
+  }
+
+  if (data.type === "SPOUSE") {
+    const marriage = await ensureMarriageUnit(
+      data.villageId,
+      data.fromMemberId,
+      data.toMemberId
+    );
+
+    return db.relationship.create({
+      data: {
+        fromMemberId: data.fromMemberId,
+        toMemberId: data.toMemberId,
+        type: data.type,
+        villageId: data.villageId,
+        ...(marriage ? { marriageId: marriage.id } : {}),
+      },
+    });
   }
 
   // For PARENT relationships: validate one parent direction to avoid ambiguity
@@ -142,6 +306,15 @@ export async function createRelationship(
     }
 
     return db.$transaction(async (tx) => {
+      const marriageId =
+        data.marriageId ||
+        (await inferMarriageIdForParentRelationship(
+          data.fromMemberId,
+          data.toMemberId,
+          data.villageId,
+          tx
+        ));
+
       await tx.relationship.deleteMany({
         where: {
           toMemberId: data.toMemberId,
@@ -151,24 +324,42 @@ export async function createRelationship(
         },
       });
 
-      return tx.relationship.create({
+      const created = await tx.relationship.create({
         data: {
           fromMemberId: data.fromMemberId,
           toMemberId: data.toMemberId,
           type: data.type,
           villageId: data.villageId,
+          ...(marriageId ? { marriageId } : {}),
         },
       });
+
+      await syncSiblingParentMarriageLinks(data.toMemberId, marriageId, tx);
+      return created;
     });
   }
 
-  return db.relationship.create({
-    data: {
-      fromMemberId: data.fromMemberId,
-      toMemberId: data.toMemberId,
-      type: data.type,
-      villageId: data.villageId,
-    },
+  const marriageId =
+    data.marriageId ||
+    (await inferMarriageIdForParentRelationship(
+      data.fromMemberId,
+      data.toMemberId,
+      data.villageId
+    ));
+
+  return db.$transaction(async (tx) => {
+    const created = await tx.relationship.create({
+      data: {
+        fromMemberId: data.fromMemberId,
+        toMemberId: data.toMemberId,
+        type: data.type,
+        villageId: data.villageId,
+        ...(marriageId ? { marriageId } : {}),
+      },
+    });
+
+    await syncSiblingParentMarriageLinks(data.toMemberId, marriageId, tx);
+    return created;
   });
 }
 

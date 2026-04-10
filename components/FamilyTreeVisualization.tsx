@@ -46,6 +46,11 @@ type TreeNodeUI = {
   siblings: TreeNodeUI[];
   children: TreeNodeUI[];
   spouses: TreeNodeUI[];
+  marriages: Array<{
+    marriageId: string;
+    spouse: TreeNodeUI | null;
+    children: TreeNodeUI[];
+  }>;
 };
 
 const HORIZONTAL_GAP = 280;
@@ -67,11 +72,16 @@ function compareTreeNodes(a: TreeNodeUI, b: TreeNodeUI) {
 }
 
 function countBranchUnits(node: TreeNodeUI): number {
-  if (!node.children || node.children.length === 0) {
+  const allChildren = [
+    ...node.children,
+    ...node.marriages.flatMap((marriage) => marriage.children),
+  ];
+
+  if (allChildren.length === 0) {
     return 1;
   }
 
-  return [...node.children].sort(compareTreeNodes).reduce((total, child) => {
+  return [...allChildren].sort(compareTreeNodes).reduce((total, child) => {
     return total + countBranchUnits(child);
   }, 0);
 }
@@ -169,18 +179,31 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string) {
     });
   }
 
+  function getSortedMarriageGroups(treeNode: TreeNodeUI) {
+    return [...treeNode.marriages].sort((a, b) => {
+      if (!a.spouse && !b.spouse) return 0;
+      if (!a.spouse) return 1;
+      if (!b.spouse) return -1;
+      return compareTreeNodes(a.spouse, b.spouse);
+    });
+  }
+
   function placeSpouses(treeNode: TreeNodeUI, memberX: number, memberY: number) {
-    const sortedSpouses = [...treeNode.spouses].sort(compareTreeNodes);
-    const marriageNodeIds: string[] = [];
+    const sortedMarriages = getSortedMarriageGroups(treeNode);
 
-    sortedSpouses.forEach((spouse, index) => {
+    const marriageLayouts = sortedMarriages.map((marriage, index) => {
+      const spouse = marriage.spouse;
       const spouseX = memberX + (index + 1) * HORIZONTAL_GAP;
-      ensureNode(spouse, spouseX, memberY);
-
-      const marriageNodeId = getMarriageNodeId(treeNode.member.id, spouse.member.id);
       const marriageX = memberX + (index + 0.5) * HORIZONTAL_GAP;
+      const marriageNodeId = spouse
+        ? getMarriageNodeId(treeNode.member.id, spouse.member.id)
+        : `${treeNode.member.id}__${marriage.marriageId}`;
+
+      if (spouse) {
+        ensureNode(spouse, spouseX, memberY);
+      }
+
       ensureMarriageNode(marriageNodeId, marriageX, memberY + 78);
-      marriageNodeIds.push(marriageNodeId);
 
       ensureEdge(
         buildEdge(
@@ -193,25 +216,65 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string) {
         )
       );
 
-      ensureEdge(
-        buildEdge(
-          `${spouse.member.id}-${marriageNodeId}-spouse-link`,
-          spouse.member.id,
-          marriageNodeId,
-          "spouse",
-          "source-left",
-          "target-right"
-        )
-      );
+      if (spouse) {
+        ensureEdge(
+          buildEdge(
+            `${spouse.member.id}-${marriageNodeId}-spouse-link`,
+            spouse.member.id,
+            marriageNodeId,
+            "spouse",
+            "source-left",
+            "target-right"
+          )
+        );
+      }
+
+      return {
+        marriageId: marriage.marriageId,
+        marriageNodeId,
+        anchorX: marriageX,
+        children: [...marriage.children].sort(compareTreeNodes),
+      };
     });
 
     return {
-      spouseCount: sortedSpouses.length,
-      primaryMarriageNodeId:
-        sortedSpouses.length === 1 ? marriageNodeIds[0] : null,
-      childAnchorX:
-        sortedSpouses.length === 1 ? memberX + HORIZONTAL_GAP / 2 : memberX,
+      marriageLayouts,
     };
+  }
+
+  function getChildSections(
+    treeNode: TreeNodeUI,
+    memberX: number,
+    spouseLayout: ReturnType<typeof placeSpouses>
+  ) {
+    const sections: Array<{
+      sourceId: string;
+      anchorX: number;
+      children: TreeNodeUI[];
+    }> = [];
+
+    const directChildren = [...treeNode.children].sort(compareTreeNodes);
+    if (directChildren.length > 0) {
+      sections.push({
+        sourceId: treeNode.member.id,
+        anchorX: memberX,
+        children: directChildren,
+      });
+    }
+
+    spouseLayout.marriageLayouts.forEach((layout) => {
+      if (layout.children.length === 0) {
+        return;
+      }
+
+      sections.push({
+        sourceId: layout.marriageNodeId,
+        anchorX: layout.anchorX,
+        children: layout.children,
+      });
+    });
+
+    return sections;
   }
 
   function placeDescendants(treeNode: TreeNodeUI, centerX: number, levelY: number) {
@@ -225,33 +288,38 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string) {
     processedMembers.add(memberId);
     ensureNode(treeNode, centerX, levelY);
     const spouseLayout = placeSpouses(treeNode, centerX, levelY);
+    const childSections = getChildSections(treeNode, centerX, spouseLayout);
 
-    const sortedChildren = [...treeNode.children].sort(compareTreeNodes);
-    if (sortedChildren.length === 0) {
+    if (childSections.length === 0) {
       return;
     }
 
-    const totalUnits = sortedChildren.reduce((sum, child) => sum + countBranchUnits(child), 0);
-    let cursorX = spouseLayout.childAnchorX - ((totalUnits - 1) * HORIZONTAL_GAP) / 2;
-
-    sortedChildren.forEach((child) => {
-      const branchUnits = countBranchUnits(child);
-      const childCenterX = cursorX + ((branchUnits - 1) * HORIZONTAL_GAP) / 2;
-      const childY = levelY + VERTICAL_GAP;
-
-      placeDescendants(child, childCenterX, childY);
-      ensureEdge(
-        buildEdge(
-          `${(spouseLayout.primaryMarriageNodeId || memberId)}-${child.member.id}-child`,
-          spouseLayout.primaryMarriageNodeId || memberId,
-          child.member.id,
-          "child",
-          "source-bottom",
-          "target-top"
-        )
+    childSections.forEach((section) => {
+      const totalUnits = section.children.reduce(
+        (sum, child) => sum + countBranchUnits(child),
+        0
       );
+      let cursorX = section.anchorX - ((totalUnits - 1) * HORIZONTAL_GAP) / 2;
 
-      cursorX += branchUnits * HORIZONTAL_GAP;
+      section.children.forEach((child) => {
+        const branchUnits = countBranchUnits(child);
+        const childCenterX = cursorX + ((branchUnits - 1) * HORIZONTAL_GAP) / 2;
+        const childY = levelY + VERTICAL_GAP;
+
+        placeDescendants(child, childCenterX, childY);
+        ensureEdge(
+          buildEdge(
+            `${section.sourceId}-${child.member.id}-child`,
+            section.sourceId,
+            child.member.id,
+            "child",
+            "source-bottom",
+            "target-top"
+          )
+        );
+
+        cursorX += branchUnits * HORIZONTAL_GAP;
+      });
     });
   }
 
@@ -261,6 +329,7 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string) {
     ensureNode(treeNode, rootX, rootY);
     processedMembers.add(treeNode.member.id);
     const spouseLayout = placeSpouses(treeNode, rootX, rootY);
+    const childSections = getChildSections(treeNode, rootX, spouseLayout);
 
     const sortedParents = [...treeNode.parents].sort(compareTreeNodes);
     const parentsStartX = rootX - ((sortedParents.length - 1) * HORIZONTAL_GAP) / 2;
@@ -310,25 +379,29 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string) {
     }
 
     const descendantsStartY = sortedSiblings.length > 0 ? rootY + VERTICAL_GAP * 2 : rootY + VERTICAL_GAP;
-    const sortedChildren = [...treeNode.children].sort(compareTreeNodes);
-    const totalUnits = sortedChildren.reduce((sum, child) => sum + countBranchUnits(child), 0);
-    let cursorX = spouseLayout.childAnchorX - ((Math.max(totalUnits, 1) - 1) * HORIZONTAL_GAP) / 2;
-
-    sortedChildren.forEach((child) => {
-      const branchUnits = countBranchUnits(child);
-      const childCenterX = cursorX + ((branchUnits - 1) * HORIZONTAL_GAP) / 2;
-      placeDescendants(child, childCenterX, descendantsStartY);
-      ensureEdge(
-        buildEdge(
-          `${(spouseLayout.primaryMarriageNodeId || treeNode.member.id)}-${child.member.id}-child-root`,
-          spouseLayout.primaryMarriageNodeId || treeNode.member.id,
-          child.member.id,
-          "child",
-          "source-bottom",
-          "target-top"
-        )
+    childSections.forEach((section) => {
+      const totalUnits = section.children.reduce(
+        (sum, child) => sum + countBranchUnits(child),
+        0
       );
-      cursorX += branchUnits * HORIZONTAL_GAP;
+      let cursorX = section.anchorX - ((Math.max(totalUnits, 1) - 1) * HORIZONTAL_GAP) / 2;
+
+      section.children.forEach((child) => {
+        const branchUnits = countBranchUnits(child);
+        const childCenterX = cursorX + ((branchUnits - 1) * HORIZONTAL_GAP) / 2;
+        placeDescendants(child, childCenterX, descendantsStartY);
+        ensureEdge(
+          buildEdge(
+            `${section.sourceId}-${child.member.id}-child-root`,
+            section.sourceId,
+            child.member.id,
+            "child",
+            "source-bottom",
+            "target-top"
+          )
+        );
+        cursorX += branchUnits * HORIZONTAL_GAP;
+      });
     });
   }
 

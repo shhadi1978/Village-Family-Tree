@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { ensureMarriageUnit } from "@/lib/services/relationship";
 
 type GenderValue = "MALE" | "FEMALE" | "OTHER";
 
@@ -171,6 +172,10 @@ export async function createMember(
   const fullName = `${data.firstName} ${data.lastName}`.trim();
 
   return db.$transaction(async (tx: any) => {
+    const marriage = mother
+      ? await ensureMarriageUnit(data.villageId, father.id, mother.id, tx)
+      : null;
+
     const member = await tx.member.create({
       data: {
         firstName: data.firstName,
@@ -193,6 +198,7 @@ export async function createMember(
         toMemberId: member.id,
         type: "PARENT",
         villageId: data.villageId,
+        marriageId: marriage?.id || null,
       },
     });
 
@@ -203,6 +209,7 @@ export async function createMember(
           toMemberId: member.id,
           type: "PARENT",
           villageId: data.villageId,
+          marriageId: marriage?.id || null,
         },
       });
     }
