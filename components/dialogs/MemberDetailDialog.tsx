@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Plus, Trash2, Search, UserCheck } from "lucide-react";
+import { X, Plus, Trash2, Search, UserCheck, Upload, Loader2 } from "lucide-react";
 import { formatDateAr } from "@/lib/i18n/format";
 import { getMemberDisplayName } from "@/lib/member-display";
 import { useRouter } from "next/navigation";
+import { genUploader } from "uploadthing/client";
+
+const { uploadFiles } = genUploader({ url: "/api/uploadthing" });
 
 interface Member {
   id: string;
@@ -46,6 +49,8 @@ export default function MemberDetailDialog({
   const [currentMotherName, setCurrentMotherName] = useState<string | null>(null);
   const [hasMother, setHasMother] = useState(false);
   const [fatherTreeTarget, setFatherTreeTarget] = useState<{ familyId: string; memberId: string; name: string } | null>(null);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -103,6 +108,7 @@ export default function MemberDetailDialog({
     setMotherSearch("");
     setMotherCandidates([]);
     setSelectedMotherId("");
+    setPhotoUrl(member.photoUrl || null);
     loadMotherStatus();
   }, [isOpen, member]);
 
@@ -333,6 +339,69 @@ export default function MemberDetailDialog({
     router.push(`/family/${fatherTreeTarget.familyId}?member=${fatherTreeTarget.memberId}`);
   };
 
+  const handleChoosePhoto = () => {
+    photoInputRef.current?.click();
+  };
+
+  const handlePhotoSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+
+    if (!file || !member) {
+      return;
+    }
+
+    setError(null);
+    setSuccessMessage(null);
+
+    if (!file.type.startsWith("image/")) {
+      setError("اختر ملف صورة صالحًا فقط");
+      input.value = "";
+      return;
+    }
+
+    if (file.size > 4 * 1024 * 1024) {
+      setError("حجم الصورة يجب أن يكون أقل من 4 ميغابايت");
+      input.value = "";
+      return;
+    }
+
+    setLoadingAction("upload-photo");
+
+    try {
+      const uploadedFiles = await uploadFiles("memberProfile", {
+        files: [file],
+      });
+
+      const uploadedFile = uploadedFiles?.[0];
+      const nextPhotoUrl = uploadedFile?.ufsUrl || uploadedFile?.url || uploadedFile?.serverData?.fileUrl;
+
+      if (!nextPhotoUrl) {
+        throw new Error("تعذر الحصول على رابط الصورة بعد الرفع");
+      }
+
+      const response = await fetch(`/api/members/${member.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoUrl: nextPhotoUrl }),
+      });
+
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(result?.error || "فشل حفظ صورة الفرد");
+      }
+
+      setPhotoUrl(nextPhotoUrl);
+      setSuccessMessage("تم تحديث صورة الفرد بنجاح");
+      onRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "تعذر رفع الصورة");
+    } finally {
+      setLoadingAction(null);
+      input.value = "";
+    }
+  };
+
   const dialogContent = (
     <div className="fixed inset-0 z-50" dir="rtl">
       <button
@@ -356,18 +425,35 @@ export default function MemberDetailDialog({
         <div className="p-5 space-y-4">
           <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
             <div className="text-center">
-              {member.photoUrl ? (
+              {photoUrl ? (
                 <img
-                  src={member.photoUrl}
+                  src={photoUrl}
                   alt={member.fullName}
-                  className="w-16 h-16 rounded-full object-cover mx-auto mb-2 border-2 border-blue-500"
+                  className="w-20 h-20 rounded-full object-cover mx-auto mb-2 border-2 border-blue-500"
                 />
               ) : (
-                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center mx-auto mb-2">
+                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center mx-auto mb-2">
                   <span className="text-2xl">👤</span>
                 </div>
               )}
               <h3 className="text-white text-lg font-semibold">{getMemberDisplayName(member)}</h3>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handlePhotoSelected}
+              />
+              <button
+                type="button"
+                onClick={handleChoosePhoto}
+                disabled={loadingAction === "upload-photo"}
+                className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded bg-sky-700 hover:bg-sky-600 disabled:bg-slate-600 text-white text-sm transition"
+              >
+                {loadingAction === "upload-photo" ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                <span>{loadingAction === "upload-photo" ? "جاري رفع الصورة..." : photoUrl ? "تغيير الصورة" : "إضافة صورة"}</span>
+              </button>
+              <p className="text-xs text-slate-400 mt-2">الصيغ المدعومة: JPG, PNG, GIF, WebP حتى 4MB</p>
             </div>
 
             {fatherTreeTarget && (

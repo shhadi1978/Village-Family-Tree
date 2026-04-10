@@ -2,26 +2,24 @@
 
 import { useEffect, useState } from "react";
 import ReactFlow, {
-  Background,
-  Controls,
-  Edge,
-  MarkerType,
-  MiniMap,
   Node,
+  Edge,
+  Controls,
+  Background,
   ReactFlowProvider,
-  useEdgesState,
   useNodesState,
+  useEdgesState,
+  MiniMap,
   useReactFlow,
+  MarkerType,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import MemberNode from "./nodes/MemberNode";
 import MarriageNode from "./nodes/MarriageNode";
-import BusNode from "./nodes/BusNode";
 
 const nodeTypes = {
   member: MemberNode,
   marriage: MarriageNode,
-  bus: BusNode,
 };
 
 interface FamilyTreeVisualizationProps {
@@ -30,8 +28,6 @@ interface FamilyTreeVisualizationProps {
   familyName?: string;
   onRefresh?: () => void;
 }
-
-type DisplayMode = "detailed" | "simplified";
 
 type TreeMemberUI = {
   id: string;
@@ -58,69 +54,45 @@ type TreeNodeUI = {
   }>;
 };
 
-type ChildSection = {
-  sourceId: string;
-  anchorX: number;
-  children: TreeNodeUI[];
-  sourceType: "direct" | "marriage";
-  label?: string;
-};
-
 const HORIZONTAL_GAP = 280;
 const VERTICAL_GAP = 220;
 const MARRIAGE_OFFSET_Y = 92;
-const BUS_OFFSET_Y = 148;
 
 function getMarriageNodeId(memberId: string, spouseId: string) {
   return [memberId, spouseId].sort().join("__marriage__");
 }
 
-function getBusNodeId(sourceId: string, children: TreeNodeUI[]) {
-  const firstChildId = children[0]?.member.id || "first";
-  const lastChildId = children[children.length - 1]?.member.id || "last";
-  return `${sourceId}__bus__${firstChildId}__${lastChildId}__${children.length}`;
-}
-
-function getSpouseSlot(index: number) {
-  const magnitude = Math.floor(index / 2) + 1;
-  const direction = index % 2 === 0 ? 1 : -1;
-  return magnitude * direction;
-}
-
 function compareTreeNodes(a: TreeNodeUI, b: TreeNodeUI) {
-  const timeA = a.member.dateOfBirth
-    ? new Date(a.member.dateOfBirth).getTime()
-    : Number.POSITIVE_INFINITY;
-  const timeB = b.member.dateOfBirth
-    ? new Date(b.member.dateOfBirth).getTime()
-    : Number.POSITIVE_INFINITY;
+  const timeA = a.member.dateOfBirth ? new Date(a.member.dateOfBirth).getTime() : Number.POSITIVE_INFINITY;
+  const timeB = b.member.dateOfBirth ? new Date(b.member.dateOfBirth).getTime() : Number.POSITIVE_INFINITY;
 
   if (timeA !== timeB) {
     return timeA - timeB;
   }
 
-  return String(a.member.fullName || "").localeCompare(
-    String(b.member.fullName || ""),
-    "ar"
-  );
+  return String(a.member.fullName || "").localeCompare(String(b.member.fullName || ""), "ar");
 }
 
-function countBranchUnits(node: TreeNodeUI): number {
+function hasDescendants(node: TreeNodeUI) {
+  return node.children.length > 0 || node.marriages.some((marriage) => marriage.children.length > 0);
+}
+
+function countBranchUnits(node: TreeNodeUI, collapsedMemberIds: Set<string>): number {
   const allChildren = [
     ...node.children,
     ...node.marriages.flatMap((marriage) => marriage.children),
   ];
 
-  if (allChildren.length === 0) {
+  if (allChildren.length === 0 || collapsedMemberIds.has(node.member.id)) {
     return 1;
   }
 
   return [...allChildren].sort(compareTreeNodes).reduce((total, child) => {
-    return total + countBranchUnits(child);
+    return total + countBranchUnits(child, collapsedMemberIds);
   }, 0);
 }
 
-function getHorizontalGap(node: TreeNodeUI, displayMode: DisplayMode) {
+function getHorizontalGap(node: TreeNodeUI) {
   const marriageCount = node.marriages.length;
   const maxMarriageChildren = node.marriages.reduce(
     (max, marriage) => Math.max(max, marriage.children.length),
@@ -128,13 +100,11 @@ function getHorizontalGap(node: TreeNodeUI, displayMode: DisplayMode) {
   );
   const directChildrenCount = node.children.length;
   const densityBoost = Math.max(maxMarriageChildren, directChildrenCount);
-  const modeBoost = displayMode === "simplified" ? 36 : 0;
 
   return (
     HORIZONTAL_GAP +
     Math.max(0, marriageCount - 1) * 48 +
-    Math.max(0, densityBoost - 2) * 24 +
-    modeBoost
+    Math.max(0, densityBoost - 2) * 24
   );
 }
 
@@ -142,7 +112,7 @@ function buildEdge(
   id: string,
   source: string,
   target: string,
-  relation: "parent" | "child" | "sibling" | "spouse" | "busDirect" | "busMarriage",
+  relation: "parent" | "child" | "sibling" | "spouse",
   sourceHandle?: string,
   targetHandle?: string
 ): Edge {
@@ -151,8 +121,6 @@ function buildEdge(
     child: { stroke: "#34d399", strokeWidth: 2 },
     sibling: { stroke: "#f59e0b", strokeWidth: 1.8, strokeDasharray: "6 4" },
     spouse: { stroke: "#e879f9", strokeWidth: 3, strokeDasharray: "10 6" },
-    busDirect: { stroke: "#4ade80", strokeWidth: 2.4 },
-    busMarriage: { stroke: "#f472b6", strokeWidth: 2.4, strokeDasharray: "8 4" },
   };
 
   const markerColor =
@@ -168,7 +136,7 @@ function buildEdge(
     id,
     source,
     target,
-    type: relation === "busDirect" || relation === "busMarriage" ? "straight" : "smoothstep",
+    type: "smoothstep",
     animated: false,
     sourceHandle,
     targetHandle,
@@ -188,7 +156,8 @@ function convertTreeToGraph(
   node: TreeNodeUI | null,
   familyName?: string,
   onRefresh?: () => void,
-  displayMode: DisplayMode = "detailed"
+  collapsedMemberIds: Set<string> = new Set(),
+  onToggleCollapse?: (memberId: string) => void
 ) {
   const nodeMap = new Map<string, Node>();
   const edgeMap = new Map<string, Edge>();
@@ -196,6 +165,7 @@ function convertTreeToGraph(
 
   function ensureNode(treeNode: TreeNodeUI, x = 0, y = 0) {
     const memberId = treeNode.member.id;
+
     const existing = nodeMap.get(memberId);
     if (existing) {
       existing.position = { x, y };
@@ -204,7 +174,14 @@ function convertTreeToGraph(
 
     nodeMap.set(memberId, {
       id: memberId,
-      data: { member: treeNode.member, familyName, onRefresh },
+      data: {
+        member: treeNode.member,
+        familyName,
+        onRefresh,
+        isCollapsed: collapsedMemberIds.has(memberId),
+        hasDescendants: hasDescendants(treeNode),
+        onToggleCollapse,
+      },
       position: { x, y },
       type: "member",
       draggable: true,
@@ -234,34 +211,6 @@ function convertTreeToGraph(
     });
   }
 
-  function ensureBusNode(
-    id: string,
-    centerX: number,
-    y: number,
-    width: number,
-    handleOffsets: number[],
-    label?: string,
-    tone: "direct" | "marriage" = "direct"
-  ) {
-    const existing = nodeMap.get(id);
-    const position = { x: centerX - width / 2, y };
-
-    if (existing) {
-      existing.position = position;
-      existing.data = { width, handleOffsets, label, tone };
-      return;
-    }
-
-    nodeMap.set(id, {
-      id,
-      data: { width, handleOffsets, label, tone },
-      position,
-      type: "bus",
-      draggable: false,
-      selectable: false,
-    });
-  }
-
   function getSortedMarriageGroups(treeNode: TreeNodeUI) {
     return [...treeNode.marriages].sort((a, b) => {
       if (!a.spouse && !b.spouse) return 0;
@@ -273,20 +222,15 @@ function convertTreeToGraph(
 
   function placeSpouses(treeNode: TreeNodeUI, memberX: number, memberY: number) {
     const sortedMarriages = getSortedMarriageGroups(treeNode);
-    const localHorizontalGap = getHorizontalGap(treeNode, displayMode);
+    const localHorizontalGap = getHorizontalGap(treeNode);
 
     const marriageLayouts = sortedMarriages.map((marriage, index) => {
       const spouse = marriage.spouse;
-      const spouseSlot = getSpouseSlot(index);
-      const spouseX = memberX + spouseSlot * localHorizontalGap;
-      const marriageX = memberX + spouseSlot * (localHorizontalGap / 2);
+      const spouseX = memberX + (index + 1) * localHorizontalGap;
+      const marriageX = memberX + (index + 0.5) * localHorizontalGap;
       const marriageNodeId = spouse
         ? getMarriageNodeId(treeNode.member.id, spouse.member.id)
         : `${treeNode.member.id}__${marriage.marriageId}`;
-      const memberHandle = spouseSlot > 0 ? "source-right" : "source-left";
-      const marriageTargetHandle = spouseSlot > 0 ? "target-left" : "target-right";
-      const spouseHandle = spouseSlot > 0 ? "source-left" : "source-right";
-      const marriageSpouseTargetHandle = spouseSlot > 0 ? "target-right" : "target-left";
 
       if (spouse) {
         ensureNode(spouse, spouseX, memberY);
@@ -300,8 +244,8 @@ function convertTreeToGraph(
           treeNode.member.id,
           marriageNodeId,
           "spouse",
-          memberHandle,
-          marriageTargetHandle
+          "source-right",
+          "target-left"
         )
       );
 
@@ -312,8 +256,8 @@ function convertTreeToGraph(
             spouse.member.id,
             marriageNodeId,
             "spouse",
-            spouseHandle,
-            marriageSpouseTargetHandle
+            "source-left",
+            "target-right"
           )
         );
       }
@@ -323,11 +267,12 @@ function convertTreeToGraph(
         marriageNodeId,
         anchorX: marriageX,
         children: [...marriage.children].sort(compareTreeNodes),
-        spouseLabel: spouse?.member.fullName || null,
       };
     });
 
-    return { marriageLayouts };
+    return {
+      marriageLayouts,
+    };
   }
 
   function getChildSections(
@@ -335,16 +280,18 @@ function convertTreeToGraph(
     memberX: number,
     spouseLayout: ReturnType<typeof placeSpouses>
   ) {
-    const sections: ChildSection[] = [];
-    const directChildren = [...treeNode.children].sort(compareTreeNodes);
+    const sections: Array<{
+      sourceId: string;
+      anchorX: number;
+      children: TreeNodeUI[];
+    }> = [];
 
+    const directChildren = [...treeNode.children].sort(compareTreeNodes);
     if (directChildren.length > 0) {
       sections.push({
         sourceId: treeNode.member.id,
         anchorX: memberX,
         children: directChildren,
-        sourceType: "direct",
-        label: treeNode.marriages.length > 0 ? "أبناء غير مرتبطين بزواج محدد" : undefined,
       });
     }
 
@@ -357,90 +304,15 @@ function convertTreeToGraph(
         sourceId: layout.marriageNodeId,
         anchorX: layout.anchorX,
         children: layout.children,
-        sourceType: "marriage",
-        label: layout.spouseLabel ? `أبناء ${layout.spouseLabel}` : "أبناء هذا الزواج",
       });
     });
 
     return sections;
   }
 
-  function placeChildSections(
-    parentNode: TreeNodeUI,
-    sections: ChildSection[],
-    levelY: number
-  ) {
-    const localHorizontalGap = getHorizontalGap(parentNode, displayMode);
-
-    sections.forEach((section) => {
-      const totalUnits = section.children.reduce(
-        (sum, child) => sum + countBranchUnits(child),
-        0
-      );
-      let cursorX =
-        section.anchorX - ((Math.max(totalUnits, 1) - 1) * localHorizontalGap) / 2;
-
-      const placements = section.children.map((child) => {
-        const branchUnits = countBranchUnits(child);
-        const childCenterX = cursorX + ((branchUnits - 1) * localHorizontalGap) / 2;
-        cursorX += branchUnits * localHorizontalGap;
-        return { child, childCenterX };
-      });
-
-      if (placements.length === 0) {
-        return;
-      }
-
-      const firstChildX = placements[0].childCenterX;
-      const lastChildX = placements[placements.length - 1].childCenterX;
-      const busWidth = Math.max(72, lastChildX - firstChildX + Math.min(localHorizontalGap * 0.6, 132));
-      const busCenterX = (firstChildX + lastChildX) / 2;
-      const busNodeId = getBusNodeId(section.sourceId, section.children);
-      const busStartX = busCenterX - busWidth / 2;
-      const handleOffsets = placements.map(({ childCenterX }) => {
-        const ratio = ((childCenterX - busStartX) / busWidth) * 100;
-        return Math.max(8, Math.min(92, ratio));
-      });
-
-      ensureBusNode(
-        busNodeId,
-        busCenterX,
-        levelY + BUS_OFFSET_Y,
-        busWidth,
-        handleOffsets,
-        section.label,
-        section.sourceType
-      );
-      ensureEdge(
-        buildEdge(
-          `${section.sourceId}-${busNodeId}-bus`,
-          section.sourceId,
-          busNodeId,
-          section.sourceType === "marriage" ? "busMarriage" : "busDirect",
-          "source-bottom",
-          "target-top"
-        )
-      );
-
-      placements.forEach(({ child, childCenterX }, index) => {
-        const childY = levelY + VERTICAL_GAP;
-        placeDescendants(child, childCenterX, childY);
-        ensureEdge(
-          buildEdge(
-            `${busNodeId}-${child.member.id}-child-${index}`,
-            busNodeId,
-            child.member.id,
-            "child",
-            `child-${index}`,
-            "target-top"
-          )
-        );
-      });
-    });
-  }
-
   function placeDescendants(treeNode: TreeNodeUI, centerX: number, levelY: number) {
     const memberId = treeNode.member.id;
+    const localHorizontalGap = getHorizontalGap(treeNode);
 
     if (processedMembers.has(memberId)) {
       ensureNode(treeNode, centerX, levelY);
@@ -452,80 +324,124 @@ function convertTreeToGraph(
     const spouseLayout = placeSpouses(treeNode, centerX, levelY);
     const childSections = getChildSections(treeNode, centerX, spouseLayout);
 
-    if (childSections.length === 0) {
+    if (childSections.length === 0 || collapsedMemberIds.has(memberId)) {
       return;
     }
 
-    placeChildSections(treeNode, childSections, levelY);
+    childSections.forEach((section) => {
+      const totalUnits = section.children.reduce(
+        (sum, child) => sum + countBranchUnits(child, collapsedMemberIds),
+        0
+      );
+      let cursorX = section.anchorX - ((totalUnits - 1) * localHorizontalGap) / 2;
+
+      section.children.forEach((child) => {
+        const branchUnits = countBranchUnits(child, collapsedMemberIds);
+        const childCenterX = cursorX + ((branchUnits - 1) * localHorizontalGap) / 2;
+        const childY = levelY + VERTICAL_GAP;
+
+        placeDescendants(child, childCenterX, childY);
+        ensureEdge(
+          buildEdge(
+            `${section.sourceId}-${child.member.id}-child`,
+            section.sourceId,
+            child.member.id,
+            "child",
+            "source-bottom",
+            "target-top"
+          )
+        );
+
+        cursorX += branchUnits * localHorizontalGap;
+      });
+    });
   }
 
   function placeFocusedTree(treeNode: TreeNodeUI) {
     const rootX = 0;
     const rootY = 0;
-    const localHorizontalGap = getHorizontalGap(treeNode, displayMode);
-    const showContext = displayMode === "detailed";
-
+    const localHorizontalGap = getHorizontalGap(treeNode);
     ensureNode(treeNode, rootX, rootY);
     processedMembers.add(treeNode.member.id);
-
     const spouseLayout = placeSpouses(treeNode, rootX, rootY);
     const childSections = getChildSections(treeNode, rootX, spouseLayout);
 
-    if (showContext) {
-      const sortedParents = [...treeNode.parents].sort(compareTreeNodes);
-      const parentsStartX = rootX - ((sortedParents.length - 1) * localHorizontalGap) / 2;
+    const sortedParents = [...treeNode.parents].sort(compareTreeNodes);
+    const parentsStartX = rootX - ((sortedParents.length - 1) * localHorizontalGap) / 2;
+    sortedParents.forEach((parent, index) => {
+      const parentX = parentsStartX + index * localHorizontalGap;
+      const parentY = rootY - VERTICAL_GAP;
+      ensureNode(parent, parentX, parentY);
+      ensureEdge(
+        buildEdge(
+          `${parent.member.id}-${treeNode.member.id}-parent`,
+          parent.member.id,
+          treeNode.member.id,
+          "parent",
+          "source-bottom",
+          "target-top"
+        )
+      );
+    });
 
-      sortedParents.forEach((parent, index) => {
-        const parentX = parentsStartX + index * localHorizontalGap;
-        const parentY = rootY - VERTICAL_GAP;
-        ensureNode(parent, parentX, parentY);
+    const sortedSiblings = [...treeNode.siblings].sort(compareTreeNodes);
+    const siblingsY = rootY + VERTICAL_GAP;
+    const siblingSlots = sortedSiblings.length + 1;
+    let siblingIndex = 0;
+    for (let slot = 0; slot < siblingSlots; slot += 1) {
+      if (slot === Math.floor(siblingSlots / 2)) {
+        continue;
+      }
+
+      const sibling = sortedSiblings[siblingIndex];
+      if (!sibling) {
+        continue;
+      }
+
+      const siblingX = rootX + (slot - Math.floor(siblingSlots / 2)) * localHorizontalGap;
+      ensureNode(sibling, siblingX, siblingsY);
+      ensureEdge(
+        buildEdge(
+          `${treeNode.member.id}-${sibling.member.id}-sibling`,
+          treeNode.member.id,
+          sibling.member.id,
+          "sibling",
+          siblingX > rootX ? "source-right" : "source-left",
+          siblingX > rootX ? "target-left" : "target-right"
+        )
+      );
+      siblingIndex += 1;
+    }
+
+    if (collapsedMemberIds.has(treeNode.member.id)) {
+      return;
+    }
+
+    const descendantsStartY = sortedSiblings.length > 0 ? rootY + VERTICAL_GAP * 2 : rootY + VERTICAL_GAP;
+    childSections.forEach((section) => {
+      const totalUnits = section.children.reduce(
+        (sum, child) => sum + countBranchUnits(child, collapsedMemberIds),
+        0
+      );
+      let cursorX = section.anchorX - ((Math.max(totalUnits, 1) - 1) * localHorizontalGap) / 2;
+
+      section.children.forEach((child) => {
+        const branchUnits = countBranchUnits(child, collapsedMemberIds);
+        const childCenterX = cursorX + ((branchUnits - 1) * localHorizontalGap) / 2;
+        placeDescendants(child, childCenterX, descendantsStartY);
         ensureEdge(
           buildEdge(
-            `${parent.member.id}-${treeNode.member.id}-parent`,
-            parent.member.id,
-            treeNode.member.id,
-            "parent",
+            `${section.sourceId}-${child.member.id}-child-root`,
+            section.sourceId,
+            child.member.id,
+            "child",
             "source-bottom",
             "target-top"
           )
         );
+        cursorX += branchUnits * localHorizontalGap;
       });
-
-      const sortedSiblings = [...treeNode.siblings].sort(compareTreeNodes);
-      const siblingsY = rootY + VERTICAL_GAP;
-      const siblingSlots = sortedSiblings.length + 1;
-      let siblingIndex = 0;
-
-      for (let slot = 0; slot < siblingSlots; slot += 1) {
-        if (slot === Math.floor(siblingSlots / 2)) {
-          continue;
-        }
-
-        const sibling = sortedSiblings[siblingIndex];
-        if (!sibling) {
-          continue;
-        }
-
-        const siblingX =
-          rootX + (slot - Math.floor(siblingSlots / 2)) * localHorizontalGap;
-        ensureNode(sibling, siblingX, siblingsY);
-        ensureEdge(
-          buildEdge(
-            `${treeNode.member.id}-${sibling.member.id}-sibling`,
-            treeNode.member.id,
-            sibling.member.id,
-            "sibling",
-            siblingX > rootX ? "source-right" : "source-left",
-            siblingX > rootX ? "target-left" : "target-right"
-          )
-        );
-        siblingIndex += 1;
-      }
-    }
-
-    if (childSections.length > 0) {
-      placeChildSections(treeNode, childSections, rootY);
-    }
+    });
   }
 
   if (node) {
@@ -541,10 +457,22 @@ function FamilyTreeFlowCanvas({
   familyName,
   onRefresh,
 }: FamilyTreeVisualizationProps) {
-  const [displayMode, setDisplayMode] = useState<DisplayMode>("detailed");
+  const [collapsedMemberIds, setCollapsedMemberIds] = useState<Set<string>>(new Set());
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const { fitView } = useReactFlow();
+
+  const handleToggleCollapse = (memberId: string) => {
+    setCollapsedMemberIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(memberId)) {
+        next.delete(memberId);
+      } else {
+        next.add(memberId);
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (treeData && !loading) {
@@ -552,14 +480,15 @@ function FamilyTreeFlowCanvas({
         treeData,
         familyName,
         onRefresh,
-        displayMode
+        collapsedMemberIds,
+        handleToggleCollapse
       );
 
       setNodes(newNodes);
       setEdges(newEdges);
-      setTimeout(() => fitView({ padding: 0.2 }), 100);
+      setTimeout(() => fitView(), 100);
     }
-  }, [treeData, loading, familyName, onRefresh, displayMode, setNodes, setEdges, fitView]);
+  }, [treeData, loading, familyName, onRefresh, collapsedMemberIds, setNodes, setEdges, fitView]);
 
   if (loading) {
     return (
@@ -599,28 +528,13 @@ function FamilyTreeFlowCanvas({
         <Background color="#334155" gap={16} />
         <Controls />
         <MiniMap
-          nodeColor={(node) => (node.type === "marriage" ? "#d946ef" : node.type === "bus" ? "#22c55e" : "#6366f1")}
+          nodeColor={() => "#6366f1"}
           nodeStrokeColor={() => "#1e293b"}
           nodeBorderRadius={8}
           maskColor="rgba(0, 0, 0, 0.5)"
         />
 
-        <div className="absolute top-4 left-4 bg-slate-800/95 border border-slate-700 rounded-lg p-2 text-sm flex gap-2">
-          <button
-            onClick={() => setDisplayMode("detailed")}
-            className={`px-3 py-2 rounded transition ${displayMode === "detailed" ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-200 hover:bg-slate-600"}`}
-          >
-            عرض مفصل
-          </button>
-          <button
-            onClick={() => setDisplayMode("simplified")}
-            className={`px-3 py-2 rounded transition ${displayMode === "simplified" ? "bg-emerald-600 text-white" : "bg-slate-700 text-slate-200 hover:bg-slate-600"}`}
-          >
-            عرض مبسّط
-          </button>
-        </div>
-
-        <div className="absolute bottom-4 right-4 bg-slate-800/95 border border-slate-700 rounded-lg p-3 md:p-4 text-sm max-w-60">
+        <div className="absolute bottom-4 right-4 bg-slate-800/95 border border-slate-700 rounded-lg p-3 md:p-4 text-sm max-w-52">
           <h4 className="text-white font-semibold mb-3">المفتاح</h4>
           <div className="space-y-2 text-slate-300">
             <div className="flex items-center gap-2">
@@ -629,20 +543,17 @@ function FamilyTreeFlowCanvas({
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-green-500 rounded"></div>
-              <span>خط الأبناء عبر bus line</span>
+              <span>علاقة ابن/ابنة</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-amber-500 rounded"></div>
               <span>أخ/أخت</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-fuchsia-500 rounded"></div>
+              <div className="w-3 h-3 bg-purple-500 rounded"></div>
               <span>علاقة زواج</span>
             </div>
           </div>
-          <p className="text-xs text-slate-400 mt-3">
-            العرض المبسّط يخفي سياق الآباء والإخوة لتقليل التشابك في الأشجار الكثيفة.
-          </p>
         </div>
       </ReactFlow>
     </div>

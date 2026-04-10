@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Handle, Position } from "reactflow";
-import { User } from "lucide-react";
+import { ChevronDown, ChevronUp, User } from "lucide-react";
 import { formatDateAr } from "@/lib/i18n/format";
 import { getMemberDisplayName } from "@/lib/member-display";
 import { isFamilyFounder } from "@/lib/member-founder";
@@ -27,11 +27,14 @@ interface MemberNodeProps {
     member: MemberNodeData;
     familyName?: string;
     onRefresh?: () => void;
+    isCollapsed?: boolean;
+    hasDescendants?: boolean;
+    onToggleCollapse?: (memberId: string) => void;
   };
 }
 
 export default function MemberNode({ data }: MemberNodeProps) {
-  const { member, familyName, onRefresh } = data;
+  const { member, familyName, onRefresh, isCollapsed = false, hasDescendants = false, onToggleCollapse } = data;
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
   const founder = isFamilyFounder(member, familyName);
   
@@ -55,6 +58,11 @@ export default function MemberNode({ data }: MemberNodeProps) {
   const handleNodeClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsDetailDialogOpen(true);
+  };
+
+  const handleToggleCollapse = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggleCollapse?.(member.id);
   };
 
   return (
@@ -140,6 +148,19 @@ export default function MemberNode({ data }: MemberNodeProps) {
           <span className="inline-block px-2 py-1 bg-red-900 text-red-200 text-xs rounded">
             متوفى
           </span>
+        </div>
+      )}
+
+      {hasDescendants && (
+        <div className="mt-3 flex justify-center">
+          <button
+            type="button"
+            onClick={handleToggleCollapse}
+            className="inline-flex items-center gap-1 rounded-full border border-emerald-500/60 bg-emerald-900/40 px-2 py-1 text-[11px] text-emerald-200 hover:bg-emerald-800/50 transition"
+          >
+            {isCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+            <span>{isCollapsed ? "فتح الفرع" : "إغلاق الفرع"}</span>
+          </button>
         </div>
       )}
       </div>
