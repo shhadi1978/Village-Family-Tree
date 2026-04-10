@@ -28,13 +28,33 @@ interface MemberNodeProps {
 export default function MemberNode({ data }: MemberNodeProps) {
   const { member, familyName } = data;
   const founder = isFamilyFounder(member, familyName);
+  const isMale = member.gender === "MALE";
+  const isFemale = member.gender === "FEMALE";
+
+  const memberCardTone = isFemale
+    ? "bg-rose-900/20 border-rose-500 hover:border-rose-400"
+    : isMale
+      ? "bg-blue-900/20 border-blue-500 hover:border-blue-400"
+      : "bg-slate-800 border-slate-600 hover:border-blue-500";
+
+  const avatarTone = isFemale
+    ? "bg-gradient-to-br from-pink-500 to-rose-500 border-pink-400"
+    : isMale
+      ? "bg-gradient-to-br from-blue-500 to-cyan-500 border-blue-400"
+      : "bg-gradient-to-br from-blue-500 to-purple-500 border-blue-500";
+
+  const genderTextTone = isFemale
+    ? "text-rose-300"
+    : isMale
+      ? "text-blue-300"
+      : "text-slate-300";
 
   return (
     <div
       className={`rounded-lg p-3 w-48 shadow-lg transition border-2 ${
         founder
           ? "founder-node-card"
-          : "bg-slate-800 border-slate-600 hover:border-blue-500"
+          : memberCardTone
       }`}
     >
       {/* Connection points */}
@@ -62,7 +82,7 @@ export default function MemberNode({ data }: MemberNodeProps) {
             className={`w-12 h-12 rounded-full flex items-center justify-center border-2 ${
               founder
                 ? "founder-avatar-gradient"
-                : "bg-gradient-to-br from-blue-500 to-purple-500 border-blue-500"
+                : avatarTone
             }`}
           >
             <User className="w-6 h-6 text-white" />
@@ -86,7 +106,9 @@ export default function MemberNode({ data }: MemberNodeProps) {
       {/* Member Info */}
       <div className="mt-2 space-y-1 text-xs text-slate-400">
         {member.gender && (
-          <p className="text-center">{genderLabelAr(member.gender)}</p>
+          <p className={`text-center ${genderTextTone}`}>
+            {genderLabelAr(member.gender)}
+          </p>
         )}
 
         {member.dateOfBirth && (
