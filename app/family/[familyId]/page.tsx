@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useFamilies, useMembers } from "@/lib/hooks/use-api";
 import { formatNumberAr, genderLabelAr } from "@/lib/i18n/format";
 import { getMemberDisplayName } from "@/lib/member-display";
@@ -21,6 +21,23 @@ const FamilyTreeVisualization = dynamic(
 );
 
 export default function FamilyTreePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+          <div className="text-slate-400 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
+            <p>جاري تحميل شجرة العائلة...</p>
+          </div>
+        </div>
+      }
+    >
+      <FamilyTreePageContent />
+    </Suspense>
+  );
+}
+
+function FamilyTreePageContent() {
   const params = useParams();
   const searchParams = useSearchParams();
   const familyId = params.familyId as string;
