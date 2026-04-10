@@ -41,6 +41,11 @@ export default function MemberDetailDialog({
   const memberGender = member.gender ? String(member.gender).toUpperCase() : "OTHER";
   const isMale = memberGender === "MALE";
   const isFemale = memberGender === "FEMALE";
+  const allowedSpouseGender: "MALE" | "FEMALE" | null = isMale
+    ? "FEMALE"
+    : isFemale
+      ? "MALE"
+      : null;
 
   const handleAddChild = async (childGender: "MALE" | "FEMALE") => {
     setLoadingAction(`add-child-${childGender}`);
@@ -234,24 +239,24 @@ export default function MemberDetailDialog({
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => handleAddSpouse("MALE")}
-                disabled={loadingAction?.startsWith("add-spouse")}
-                className="flex items-center justify-center gap-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-600 text-white rounded text-sm font-medium transition"
-              >
-                <Plus size={16} />
-                <span className="text-xs">+ زوج</span>
-              </button>
-              <button
-                onClick={() => handleAddSpouse("FEMALE")}
-                disabled={loadingAction?.startsWith("add-spouse")}
-                className="flex items-center justify-center gap-1 px-3 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-600 text-white rounded text-sm font-medium transition"
-              >
-                <Plus size={16} />
-                <span className="text-xs">+ زوجة</span>
-              </button>
-            </div>
+            {allowedSpouseGender ? (
+              <div className="grid grid-cols-1 gap-2">
+                <button
+                  onClick={() => handleAddSpouse(allowedSpouseGender)}
+                  disabled={loadingAction?.startsWith("add-spouse")}
+                  className="flex items-center justify-center gap-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-600 text-white rounded text-sm font-medium transition"
+                >
+                  <Plus size={16} />
+                  <span className="text-xs">
+                    {allowedSpouseGender === "MALE" ? "+ زوج" : "+ زوجة"}
+                  </span>
+                </button>
+              </div>
+            ) : (
+              <div className="p-2 rounded border border-slate-600 text-slate-300 text-xs text-center">
+                لا يمكن تحديد زوج/زوجة تلقائيًا لأن نوع هذا الفرد غير محدد.
+              </div>
+            )}
 
             <button
               onClick={handleDeleteAllRelationships}

@@ -173,6 +173,33 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (spouseId) {
+      const spouseMember = await memberService.getMember(spouseId);
+      if (!spouseMember) {
+        return NextResponse.json(
+          { error: "العضو المراد إضافة زوج/زوجة له غير موجود" },
+          { status: 404 }
+        );
+      }
+
+      if (spouseMember.villageId !== villageId) {
+        return NextResponse.json(
+          { error: "يجب أن يكون الزوج/الزوجة في نفس القرية" },
+          { status: 400 }
+        );
+      }
+
+      if (
+        (spouseMember.gender === "MALE" && gender === "MALE") ||
+        (spouseMember.gender === "FEMALE" && gender === "FEMALE")
+      ) {
+        return NextResponse.json(
+          { error: "لا يمكن إضافة زوج إلى زوج أو زوجة إلى زوجة" },
+          { status: 400 }
+        );
+      }
+    }
+
     // Create member with appropriate relationship
     const resolvedParentId = parentId || fatherId;
     const memberData = {
