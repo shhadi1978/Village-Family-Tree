@@ -15,9 +15,11 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import MemberNode from "./nodes/MemberNode";
+import MarriageNode from "./nodes/MarriageNode";
 
 const nodeTypes = {
   member: MemberNode,
+  marriage: MarriageNode,
 };
 
 interface FamilyTreeVisualizationProps {
@@ -48,6 +50,10 @@ type TreeNodeUI = {
 
 const HORIZONTAL_GAP = 280;
 const VERTICAL_GAP = 220;
+
+function getMarriageNodeId(memberId: string, spouseId: string) {
+  return [memberId, spouseId].sort().join("__marriage__");
+}
 
 function compareTreeNodes(a: TreeNodeUI, b: TreeNodeUI) {
   const timeA = a.member.dateOfBirth ? new Date(a.member.dateOfBirth).getTime() : Number.POSITIVE_INFINITY;
@@ -146,6 +152,68 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string) {
     }
   }
 
+  function ensureMarriageNode(id: string, x: number, y: number) {
+    const existing = nodeMap.get(id);
+    if (existing) {
+      existing.position = { x, y };
+      return;
+    }
+
+    nodeMap.set(id, {
+      id,
+      data: {},
+      position: { x, y },
+      type: "marriage",
+      draggable: false,
+      selectable: false,
+    });
+  }
+
+  function placeSpouses(treeNode: TreeNodeUI, memberX: number, memberY: number) {
+    const sortedSpouses = [...treeNode.spouses].sort(compareTreeNodes);
+    const marriageNodeIds: string[] = [];
+
+    sortedSpouses.forEach((spouse, index) => {
+      const spouseX = memberX + (index + 1) * HORIZONTAL_GAP;
+      ensureNode(spouse, spouseX, memberY);
+
+      const marriageNodeId = getMarriageNodeId(treeNode.member.id, spouse.member.id);
+      const marriageX = memberX + (index + 0.5) * HORIZONTAL_GAP;
+      ensureMarriageNode(marriageNodeId, marriageX, memberY + 78);
+      marriageNodeIds.push(marriageNodeId);
+
+      ensureEdge(
+        buildEdge(
+          `${treeNode.member.id}-${marriageNodeId}-spouse-link`,
+          treeNode.member.id,
+          marriageNodeId,
+          "spouse",
+          "source-right",
+          "target-left"
+        )
+      );
+
+      ensureEdge(
+        buildEdge(
+          `${spouse.member.id}-${marriageNodeId}-spouse-link`,
+          spouse.member.id,
+          marriageNodeId,
+          "spouse",
+          "source-left",
+          "target-right"
+        )
+      );
+    });
+
+    return {
+      spouseCount: sortedSpouses.length,
+      primaryMarriageNodeId:
+        sortedSpouses.length === 1 ? marriageNodeIds[0] : null,
+      childAnchorX:
+        sortedSpouses.length === 1 ? memberX + HORIZONTAL_GAP / 2 : memberX,
+    };
+  }
+
   function placeDescendants(treeNode: TreeNodeUI, centerX: number, levelY: number) {
     const memberId = treeNode.member.id;
 
@@ -156,6 +224,7 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string) {
 
     processedMembers.add(memberId);
     ensureNode(treeNode, centerX, levelY);
+    const spouseLayout = placeSpouses(treeNode, centerX, levelY);
 
     const sortedChildren = [...treeNode.children].sort(compareTreeNodes);
     if (sortedChildren.length === 0) {
@@ -163,7 +232,7 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string) {
     }
 
     const totalUnits = sortedChildren.reduce((sum, child) => sum + countBranchUnits(child), 0);
-    let cursorX = centerX - ((totalUnits - 1) * HORIZONTAL_GAP) / 2;
+    let cursorX = spouseLayout.childAnchorX - ((totalUnits - 1) * HORIZONTAL_GAP) / 2;
 
     sortedChildren.forEach((child) => {
       const branchUnits = countBranchUnits(child);
@@ -173,8 +242,8 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string) {
       placeDescendants(child, childCenterX, childY);
       ensureEdge(
         buildEdge(
-          `${memberId}-${child.member.id}-child`,
-          memberId,
+          `${(spouseLayout.primaryMarriageNodeId || memberId)}-${child.member.id}-child`,
+          spouseLayout.primaryMarriageNodeId || memberId,
           child.member.id,
           "child",
           "source-bottom",
@@ -191,6 +260,7 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string) {
     const rootY = 0;
     ensureNode(treeNode, rootX, rootY);
     processedMembers.add(treeNode.member.id);
+    const spouseLayout = placeSpouses(treeNode, rootX, rootY);
 
     const sortedParents = [...treeNode.parents].sort(compareTreeNodes);
     const parentsStartX = rootX - ((sortedParents.length - 1) * HORIZONTAL_GAP) / 2;
@@ -242,7 +312,7 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string) {
     const descendantsStartY = sortedSiblings.length > 0 ? rootY + VERTICAL_GAP * 2 : rootY + VERTICAL_GAP;
     const sortedChildren = [...treeNode.children].sort(compareTreeNodes);
     const totalUnits = sortedChildren.reduce((sum, child) => sum + countBranchUnits(child), 0);
-    let cursorX = rootX - ((Math.max(totalUnits, 1) - 1) * HORIZONTAL_GAP) / 2;
+    let cursorX = spouseLayout.childAnchorX - ((Math.max(totalUnits, 1) - 1) * HORIZONTAL_GAP) / 2;
 
     sortedChildren.forEach((child) => {
       const branchUnits = countBranchUnits(child);
@@ -250,8 +320,8 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string) {
       placeDescendants(child, childCenterX, descendantsStartY);
       ensureEdge(
         buildEdge(
-          `${treeNode.member.id}-${child.member.id}-child-root`,
-          treeNode.member.id,
+          `${(spouseLayout.primaryMarriageNodeId || treeNode.member.id)}-${child.member.id}-child-root`,
+          spouseLayout.primaryMarriageNodeId || treeNode.member.id,
           child.member.id,
           "child",
           "source-bottom",
@@ -259,21 +329,6 @@ function convertTreeToGraph(node: TreeNodeUI | null, familyName?: string) {
         )
       );
       cursorX += branchUnits * HORIZONTAL_GAP;
-    });
-
-    treeNode.spouses.forEach((spouse, index) => {
-      const spouseX = rootX + (index + 1) * HORIZONTAL_GAP;
-      ensureNode(spouse, spouseX, rootY);
-      ensureEdge(
-        buildEdge(
-          `${treeNode.member.id}-${spouse.member.id}-spouse`,
-          treeNode.member.id,
-          spouse.member.id,
-          "spouse",
-          "source-right",
-          "target-left"
-        )
-      );
     });
   }
 

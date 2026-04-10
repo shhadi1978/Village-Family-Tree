@@ -53,6 +53,64 @@ export interface FamilyTreeNode {
   spouses: FamilyTreeNode[];
 }
 
+function toShallowTreeNode(member: MemberWithRelationships): FamilyTreeNode {
+  return {
+    member,
+    parents: [],
+    siblings: [],
+    children: [],
+    spouses: [],
+  };
+}
+
+function getUniqueSpouseIds(member: MemberWithRelationships): string[] {
+  const spouseRelationshipsAsFrom = member.relationshipsAsFrom.filter(
+    (rel) => rel.type === "SPOUSE"
+  );
+
+  const spouseRelationshipsAsTo = member.relationshipsAsTo.filter(
+    (rel) => rel.type === "SPOUSE"
+  );
+
+  const spouseCombined = [
+    ...spouseRelationshipsAsFrom,
+    ...spouseRelationshipsAsTo,
+  ];
+
+  const uniqueSpouses = new Set<string>();
+  spouseCombined.forEach((rel) => {
+    const spouseId = rel.fromMemberId === member.id ? rel.toMemberId : rel.fromMemberId;
+    uniqueSpouses.add(spouseId);
+  });
+
+  return Array.from(uniqueSpouses);
+}
+
+async function fetchShallowSpouseNodes(
+  member: MemberWithRelationships,
+  visitedIds?: Set<string>
+): Promise<FamilyTreeNode[]> {
+  const spouseIds = getUniqueSpouseIds(member).filter(
+    (spouseId) => !visitedIds?.has(spouseId)
+  );
+
+  const spouseMembers = await Promise.all(
+    spouseIds.map((spouseId) => fetchMemberWithRelationships(spouseId))
+  );
+
+  const spouses: FamilyTreeNode[] = [];
+  spouseMembers.forEach((spouseMember, index) => {
+    if (!spouseMember) {
+      return;
+    }
+
+    visitedIds?.add(spouseIds[index]);
+    spouses.push(toShallowTreeNode(spouseMember));
+  });
+
+  return spouses;
+}
+
 type TreeViewMode = "FULL" | "DESCENDANTS";
 
 export type FocusedTreeOptions = {
@@ -189,32 +247,6 @@ export async function fetchFamilyTree(
       (rel) => rel.type === "PARENT"
     );
 
-    const spouseRelationshipsAsFrom = member.relationshipsAsFrom.filter(
-      (rel) => rel.type === "SPOUSE"
-    );
-
-    const spouseRelationshipsAsTo = member.relationshipsAsTo.filter(
-      (rel) => rel.type === "SPOUSE"
-    );
-
-    const spouseCombined = [
-      ...spouseRelationshipsAsFrom,
-      ...spouseRelationshipsAsTo,
-    ];
-
-    // Create a set to track unique spouses (avoid duplicates)
-    const uniqueSpouses = new Map<
-      string,
-      RelationshipRecord & { toMember?: MemberRecord; fromMember?: MemberRecord }
-    >();
-
-    spouseCombined.forEach((rel) => {
-      const spouseId = rel.fromMemberId === memberId ? rel.toMemberId : rel.fromMemberId;
-      if (!uniqueSpouses.has(spouseId)) {
-        uniqueSpouses.set(spouseId, rel);
-      }
-    });
-
     const parents: FamilyTreeNode[] =
       mode === "FULL"
         ? (
@@ -243,26 +275,8 @@ export async function fetchFamilyTree(
     );
 
     // Recursively fetch spouses (depth + 1)
-    const spouseIds = (mode === "FULL" ? Array.from(uniqueSpouses.keys()) : []).filter(
-      (spouseId) => !visitedIds.has(spouseId)
-    );
-    const spouseMembers = await Promise.all(
-      spouseIds.map((spouseId) => fetchMemberWithRelationships(spouseId))
-    );
-    const spouses: FamilyTreeNode[] = [];
-    spouseMembers.forEach((spouseMember, index) => {
-      if (!spouseMember) {
-        return;
-      }
-      visitedIds.add(spouseIds[index]);
-      spouses.push({
-        member: spouseMember,
-        parents: [],
-        siblings: [],
-        children: [],
-        spouses: [],
-      });
-    });
+    const spouses =
+      mode === "FULL" ? await fetchShallowSpouseNodes(member, visitedIds) : [];
 
     return {
       member,
@@ -343,26 +357,21 @@ export async function fetchFocusedFamilyTree(
         .filter((rel) => rel.type === "PARENT")
         .map((rel) => rel.fromMember)
         .filter((parent): parent is MemberWithRelationships => !!parent)
-        .map((parent) => ({
-          member: parent,
-          parents: [],
-          siblings: [],
-          children: [],
-          spouses: [],
-        }))
+        .map((parent) => toShallowTreeNode(parent))
     : [];
 
   const siblings = includeSiblings ? await fetchSiblingNodes(member) : [];
   const descendantsTree = includeDescendants
     ? await fetchFamilyTree(memberId, maxDepth, new Set(), 0, "DESCENDANTS")
     : null;
+  const spouses = await fetchShallowSpouseNodes(member);
 
   return {
     member,
     parents,
     siblings,
     children: descendantsTree?.children || [],
-    spouses: [],
+    spouses,
   };
 }
 
