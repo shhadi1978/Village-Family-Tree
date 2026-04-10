@@ -35,6 +35,9 @@ export default function MemberDetailDialog({
 }: MemberDetailDialogProps) {
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [childName, setChildName] = useState("");
+  const [spouseName, setSpouseName] = useState("");
 
   if (!isOpen || !member) return null;
 
@@ -47,15 +50,27 @@ export default function MemberDetailDialog({
       ? "MALE"
       : null;
 
+  const splitName = (fullName: string, fallbackLastName?: string | null) => {
+    const trimmed = fullName.trim();
+    if (!trimmed) {
+      return { firstName: "", lastName: fallbackLastName || "" };
+    }
+
+    const parts = trimmed.split(/\s+/);
+    const firstName = parts[0] || "";
+    const lastName = parts.slice(1).join(" ") || fallbackLastName || "";
+    return { firstName, lastName };
+  };
+
   const handleAddChild = async (childGender: "MALE" | "FEMALE") => {
     setLoadingAction(`add-child-${childGender}`);
     setError(null);
+    setSuccessMessage(null);
 
     try {
-      const childLabel = childGender === "MALE" ? "ابن" : "ابنة";
-      const childName = prompt(`أدخل اسم ${childLabel}:`);
-
-      if (!childName) {
+      const parsed = splitName(childName, member.lastName);
+      if (!parsed.firstName) {
+        setError("اكتب اسم الطفل أولاً");
         setLoadingAction(null);
         return;
       }
@@ -64,8 +79,8 @@ export default function MemberDetailDialog({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          firstName: childName.split(" ")[0],
-          lastName: childName.split(" ").slice(1).join(" ") || member.lastName,
+          firstName: parsed.firstName,
+          lastName: parsed.lastName,
           gender: childGender,
           familyId: member.familyId,
           villageId: member.villageId,
@@ -74,9 +89,12 @@ export default function MemberDetailDialog({
       });
 
       if (!response.ok) {
-        throw new Error("فشل إضافة الطفل");
+        const result = await response.json().catch(() => null);
+        throw new Error(result?.error || "فشل إضافة الطفل");
       }
 
+      setChildName("");
+      setSuccessMessage("تمت إضافة الطفل بنجاح");
       onRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "خطأ غير معروف");
@@ -88,12 +106,12 @@ export default function MemberDetailDialog({
   const handleAddSpouse = async (spouseGender: "MALE" | "FEMALE") => {
     setLoadingAction(`add-spouse-${spouseGender}`);
     setError(null);
+    setSuccessMessage(null);
 
     try {
-      const spouseLabel = spouseGender === "MALE" ? "زوج" : "زوجة";
-      const spouseName = prompt(`أدخل اسم ${spouseLabel}:`);
-
-      if (!spouseName) {
+      const parsed = splitName(spouseName, member.lastName);
+      if (!parsed.firstName) {
+        setError("اكتب اسم الزوج/الزوجة أولاً");
         setLoadingAction(null);
         return;
       }
@@ -102,8 +120,8 @@ export default function MemberDetailDialog({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          firstName: spouseName.split(" ")[0],
-          lastName: spouseName.split(" ").slice(1).join(" "),
+          firstName: parsed.firstName,
+          lastName: parsed.lastName,
           gender: spouseGender,
           familyId: member.familyId,
           villageId: member.villageId,
@@ -112,9 +130,12 @@ export default function MemberDetailDialog({
       });
 
       if (!response.ok) {
-        throw new Error("فشل إضافة الزوج/الزوجة");
+        const result = await response.json().catch(() => null);
+        throw new Error(result?.error || "فشل إضافة الزوج/الزوجة");
       }
 
+      setSpouseName("");
+      setSuccessMessage("تمت إضافة الزوج/الزوجة بنجاح");
       onRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "خطأ غير معروف");
@@ -134,6 +155,7 @@ export default function MemberDetailDialog({
 
     setLoadingAction("delete-relationships");
     setError(null);
+    setSuccessMessage(null);
 
     try {
       const response = await fetch(`/api/relationships/delete-all`, {
@@ -143,9 +165,11 @@ export default function MemberDetailDialog({
       });
 
       if (!response.ok) {
-        throw new Error("فشل حذف العلاقات");
+        const result = await response.json().catch(() => null);
+        throw new Error(result?.error || "فشل حذف العلاقات");
       }
 
+      setSuccessMessage("تم حذف العلاقات بنجاح");
       onRefresh();
       onClose();
     } catch (err) {
@@ -218,39 +242,74 @@ export default function MemberDetailDialog({
             </div>
           )}
 
+          {/* Success Message */}
+          {successMessage && (
+            <div className="p-3 bg-emerald-900/30 border border-emerald-700 rounded text-emerald-300 text-sm">
+              {successMessage}
+            </div>
+          )}
+
           {/* Action Buttons */}
           <div className="space-y-2 pt-2">
+            <div className="rounded-lg border border-slate-700 p-3 space-y-2">
+              <p className="text-xs text-slate-300">إضافة طفل جديد</p>
+              <input
+                value={childName}
+                onChange={(e) => setChildName(e.target.value)}
+                placeholder="اكتب الاسم الكامل للطفل"
+                className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-600 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => handleAddChild("MALE")}
-                disabled={loadingAction?.startsWith("add-child")}
+                disabled={loadingAction?.startsWith("add-child") || !childName.trim()}
                 className="flex items-center justify-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 text-white rounded text-sm font-medium transition"
               >
                 <Plus size={16} />
-                <span className="text-xs">+ ابن</span>
+                <span className="text-xs">
+                  {loadingAction === "add-child-MALE" ? "جاري الإضافة..." : "+ ابن"}
+                </span>
               </button>
               <button
                 onClick={() => handleAddChild("FEMALE")}
-                disabled={loadingAction?.startsWith("add-child")}
+                disabled={loadingAction?.startsWith("add-child") || !childName.trim()}
                 className="flex items-center justify-center gap-1 px-3 py-2 bg-pink-600 hover:bg-pink-700 disabled:bg-slate-600 text-white rounded text-sm font-medium transition"
               >
                 <Plus size={16} />
-                <span className="text-xs">+ ابنة</span>
+                <span className="text-xs">
+                  {loadingAction === "add-child-FEMALE" ? "جاري الإضافة..." : "+ ابنة"}
+                </span>
               </button>
+            </div>
             </div>
 
             {allowedSpouseGender ? (
-              <div className="grid grid-cols-1 gap-2">
+              <div className="rounded-lg border border-slate-700 p-3 space-y-2">
+                <p className="text-xs text-slate-300">إضافة زوج/زوجة</p>
+                <input
+                  value={spouseName}
+                  onChange={(e) => setSpouseName(e.target.value)}
+                  placeholder="اكتب الاسم الكامل للزوج/الزوجة"
+                  className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-600 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+
+                <div className="grid grid-cols-1 gap-2">
                 <button
                   onClick={() => handleAddSpouse(allowedSpouseGender)}
-                  disabled={loadingAction?.startsWith("add-spouse")}
+                  disabled={loadingAction?.startsWith("add-spouse") || !spouseName.trim()}
                   className="flex items-center justify-center gap-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-600 text-white rounded text-sm font-medium transition"
                 >
                   <Plus size={16} />
                   <span className="text-xs">
-                    {allowedSpouseGender === "MALE" ? "+ زوج" : "+ زوجة"}
+                    {loadingAction?.startsWith("add-spouse")
+                      ? "جاري الإضافة..."
+                      : allowedSpouseGender === "MALE"
+                        ? "+ زوج"
+                        : "+ زوجة"}
                   </span>
                 </button>
+                </div>
               </div>
             ) : (
               <div className="p-2 rounded border border-slate-600 text-slate-300 text-xs text-center">
