@@ -40,6 +40,7 @@ export default function MemberForm({
     dateOfDeath: initialData?.dateOfDeath || "",
     bio: initialData?.bio || "",
     photoUrl: initialData?.photoUrl || "",
+    isFounder: initialData?.isFounder || false,
     fatherId: "",
     motherId: "",
   });
@@ -214,6 +215,30 @@ export default function MemberForm({
             <option value="OTHER">آخر</option>
           </select>
         </div>
+
+        {memberId && (
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="isFounder"
+              name="isFounder"
+              checked={Boolean(formData.isFounder)}
+              onChange={(e) => {
+                setFormData((prev) => ({
+                  ...prev,
+                  isFounder: e.target.checked,
+                }));
+              }}
+              className="w-4 h-4 bg-slate-700 border border-slate-600 rounded cursor-pointer"
+            />
+            <label htmlFor="isFounder" className="text-sm font-medium text-slate-300 cursor-pointer">
+              مؤسس العائلة
+            </label>
+            <p className="text-xs text-slate-400 ml-auto">
+              (يمكن فقط مسؤولو النظام تعديل هذا الحقل)
+            </p>
+          </div>
+        )}
 
         {!memberId && (
           <>

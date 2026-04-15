@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useFamilies, useMembers, useRelationships } from "@/lib/hooks/use-api";
 import { usePermissions } from "@/lib/hooks/use-permissions";
 import { formatDateAr, formatNumberAr, genderLabelAr } from "@/lib/i18n/format";
@@ -76,6 +76,7 @@ function relationshipLabel(
 
 export default function FamilyDetailsPage() {
   const params = useParams();
+  const router = useRouter();
   const familyId = params.familyId as string;
   const {
     canManageFamily,
@@ -83,12 +84,13 @@ export default function FamilyDetailsPage() {
     canCreateMember,
     canEditMember,
     canDeleteMember,
+    canDeleteFamily,
     canCreateRelationship,
     canDeleteRelationship,
     isSuperAdmin,
   } = usePermissions();
 
-  const { getFamily } = useFamilies();
+  const { getFamily, deleteFamily } = useFamilies();
   const {
     members,
     loading: membersLoading,
@@ -669,6 +671,23 @@ export default function FamilyDetailsPage() {
     }
   };
 
+  const handleDeleteFamily = async () => {
+    if (!family) return;
+    if (!confirm(`هل أنت متأكد من حذف عائلة "${family.name}"؟\n\nسيتم حذف جميع الأفراد والعلاقات المرتبطة بها. لا يمكن التراجع عن هذا الإجراء.`)) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await deleteFamily(familyId);
+      router.push("/dashboard/families");
+    } catch (err) {
+      console.error("Error deleting family:", err);
+      alert(err instanceof Error ? err.message : "تعذر حذف العائلة");
+      setIsDeleting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -734,6 +753,16 @@ export default function FamilyDetailsPage() {
             >
               تعديل العائلة
             </Link>
+          )}
+          {canDeleteFamily(familyId) && (
+            <button
+              onClick={handleDeleteFamily}
+              disabled={isDeleting}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-red-700 hover:bg-red-600 disabled:opacity-50 text-white rounded-lg transition"
+            >
+              <Trash2 className="w-4 h-4" />
+              {isDeleting ? "جاري الحذف..." : "حذف العائلة"}
+            </button>
           )}
         </div>
       </div>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import * as memberService from "@/lib/services/member";
 import * as familyService from "@/lib/services/family";
+import { isSuperAdmin } from "@/lib/authz";
 
 export const runtime = "nodejs";
 
@@ -101,14 +102,17 @@ export async function PUT(
       );
     }
 
+    // Only allow super admins to modify founder status
     if (isFounder !== undefined) {
-      return NextResponse.json(
-        {
-          error:
-            "لا يمكن تعديل حالة المؤسس يدويًا. يتم تعيينها تلقائيًا عند إنشاء العائلة.",
-        },
-        { status: 400 }
-      );
+      if (!isSuperAdmin(userId)) {
+        return NextResponse.json(
+          {
+            error:
+              "صلاحية محدودة: فقط مسؤولو النظام يمكنهم تعديل حالة المؤسس.",
+          },
+          { status: 403 }
+        );
+      }
     }
 
     const updatedMember = await memberService.updateMember(memberId, {
@@ -122,6 +126,7 @@ export async function PUT(
       ...(dateOfDeath !== undefined && { dateOfDeath: dateOfDeath ? new Date(dateOfDeath) : null }),
       ...(bio !== undefined && { bio }),
       ...(photoUrl !== undefined && { photoUrl }),
+      ...(isFounder !== undefined && { isFounder: Boolean(isFounder) }),
     });
 
     return NextResponse.json({ data: updatedMember }, { status: 200 });

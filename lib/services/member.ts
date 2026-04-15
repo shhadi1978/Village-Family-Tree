@@ -257,7 +257,22 @@ export async function getFamilyMembers(familyId: string) {
   return db.member.findMany({
     where: { familyId },
     orderBy: { fullName: "asc" },
-    include: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      nickname: true,
+      fullName: true,
+      gender: true,
+      isFounder: true,
+      dateOfBirth: true,
+      dateOfDeath: true,
+      bio: true,
+      photoUrl: true,
+      familyId: true,
+      villageId: true,
+      createdAt: true,
+      updatedAt: true,
       relationshipsAsTo: {
         where: { type: "PARENT" },
         select: {
@@ -283,8 +298,29 @@ export async function getVillageMembers(villageId: string) {
   return db.member.findMany({
     where: { villageId },
     orderBy: { fullName: "asc" },
-    include: {
-      family: true,
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      nickname: true,
+      fullName: true,
+      gender: true,
+      isFounder: true,
+      dateOfBirth: true,
+      dateOfDeath: true,
+      bio: true,
+      photoUrl: true,
+      familyId: true,
+      villageId: true,
+      createdAt: true,
+      updatedAt: true,
+      family: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+        },
+      },
       relationshipsAsTo: {
         where: { type: "PARENT" },
         select: {
@@ -338,8 +374,29 @@ export async function searchMembers(villageId: string, query: string) {
       ],
     },
     orderBy: { fullName: "asc" },
-    include: {
-      family: true,
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      nickname: true,
+      fullName: true,
+      gender: true,
+      isFounder: true,
+      dateOfBirth: true,
+      dateOfDeath: true,
+      bio: true,
+      photoUrl: true,
+      familyId: true,
+      villageId: true,
+      createdAt: true,
+      updatedAt: true,
+      family: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+        },
+      },
       relationshipsAsTo: {
         where: { type: "PARENT" },
         select: {
@@ -413,8 +470,31 @@ export async function getMembersPaginated(options: {
     db.member.findMany({
       where,
       orderBy: { fullName: "asc" },
-      include: {
-        ...(options.villageId ? { family: true } : {}),
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        nickname: true,
+        fullName: true,
+        gender: true,
+        isFounder: true,
+        dateOfBirth: true,
+        dateOfDeath: true,
+        bio: true,
+        photoUrl: true,
+        familyId: true,
+        villageId: true,
+        createdAt: true,
+        updatedAt: true,
+        ...(options.villageId ? {
+          family: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+            },
+          },
+        } : {}),
         relationshipsAsTo: {
           where: { type: "PARENT" },
           select: {
