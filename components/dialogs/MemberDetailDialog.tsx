@@ -21,6 +21,10 @@ interface Member {
   photoUrl?: string | null;
   familyId: string;
   villageId: string;
+  family?: {
+    id: string;
+    name: string;
+  } | null;
 }
 
 interface MemberDetailDialogProps {
@@ -43,6 +47,9 @@ export default function MemberDetailDialog({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [childName, setChildName] = useState("");
   const [spouseName, setSpouseName] = useState("");
+  const [spouseSearch, setSpouseSearch] = useState("");
+  const [spouseCandidates, setSpouseCandidates] = useState<Member[]>([]);
+  const [selectedSpouseId, setSelectedSpouseId] = useState<string>("");
   const [motherSearch, setMotherSearch] = useState("");
   const [motherCandidates, setMotherCandidates] = useState<Member[]>([]);
   const [selectedMotherId, setSelectedMotherId] = useState<string>("");
@@ -108,6 +115,9 @@ export default function MemberDetailDialog({
     setMotherSearch("");
     setMotherCandidates([]);
     setSelectedMotherId("");
+    setSpouseSearch("");
+    setSpouseCandidates([]);
+    setSelectedSpouseId("");
     setPhotoUrl(member.photoUrl || null);
     loadMotherStatus();
   }, [isOpen, member]);
@@ -209,6 +219,84 @@ export default function MemberDetailDialog({
 
       setSpouseName("");
       setSuccessMessage("تمت إضافة الزوج/الزوجة بنجاح");
+      onRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "خطأ غير معروف");
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleSearchSpouses = async () => {
+    if (!member || !allowedSpouseGender) return;
+
+    const query = spouseSearch.trim();
+    if (!query) {
+      setSpouseCandidates([]);
+      return;
+    }
+
+    setLoadingAction("search-spouse");
+    setError(null);
+
+    try {
+      const response = await fetch(
+        `/api/members?villageId=${member.villageId}&search=${encodeURIComponent(query)}`
+      );
+
+      if (!response.ok) {
+        throw new Error("تعذر البحث عن الأزواج/الزوجات");
+      }
+
+      const result = await response.json();
+      const members = Array.isArray(result?.data) ? result.data : [];
+      const filteredCandidates = members.filter((candidate: Member) => {
+        if (candidate.id === member.id) {
+          return false;
+        }
+
+        return String(candidate.gender || "").toUpperCase() === allowedSpouseGender;
+      });
+
+      setSpouseCandidates(filteredCandidates);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "خطأ غير معروف أثناء البحث");
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleAssignExistingSpouse = async () => {
+    if (!member || !selectedSpouseId) {
+      setError("اختر الزوج/الزوجة أولاً من نتائج البحث");
+      return;
+    }
+
+    setLoadingAction("assign-spouse");
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      const response = await fetch("/api/relationships", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fromMemberId: member.id,
+          toMemberId: selectedSpouseId,
+          type: "SPOUSE",
+          villageId: member.villageId,
+        }),
+      });
+
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(result?.error || "تعذر ربط الزوج/الزوجة");
+      }
+
+      setSpouseSearch("");
+      setSpouseCandidates([]);
+      setSelectedSpouseId("");
+      setSuccessMessage("تم ربط الزوج/الزوجة بنجاح");
       onRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "خطأ غير معروف");
@@ -575,6 +663,58 @@ export default function MemberDetailDialog({
             {allowedSpouseGender ? (
               <div className="rounded-lg border border-slate-700 p-3 space-y-2">
                 <p className="text-xs text-slate-300">إضافة زوج/زوجة</p>
+                <p className="text-xs text-slate-400">
+                  يمكنك اختيار {allowedSpouseGender === "MALE" ? "زوج" : "زوجة"} من نفس العائلة أو من عائلات أخرى داخل نفس القرية.
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    value={spouseSearch}
+                    onChange={(e) => setSpouseSearch(e.target.value)}
+                    placeholder="ابحث باسم الزوج/الزوجة الموجودة"
+                    className="flex-1 px-3 py-2 rounded bg-slate-900 border border-slate-600 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    onClick={handleSearchSpouses}
+                    disabled={loadingAction === "search-spouse" || !spouseSearch.trim()}
+                    className="px-3 py-2 rounded bg-indigo-700 hover:bg-indigo-600 disabled:bg-slate-600 text-white text-sm"
+                  >
+                    <Search size={16} />
+                  </button>
+                </div>
+
+                {spouseCandidates.length > 0 && (
+                  <div className="max-h-36 overflow-y-auto border border-slate-700 rounded">
+                    {spouseCandidates.map((candidate) => (
+                      <button
+                        key={candidate.id}
+                        type="button"
+                        onClick={() => setSelectedSpouseId(candidate.id)}
+                        className={`w-full text-right px-3 py-2 text-sm border-b last:border-b-0 border-slate-700 transition ${
+                          selectedSpouseId === candidate.id
+                            ? "bg-indigo-900/40 text-indigo-300"
+                            : "text-slate-200 hover:bg-slate-700/70"
+                        }`}
+                      >
+                        <div className="font-medium">{candidate.fullName}</div>
+                        <div className="text-[11px] text-slate-400">
+                          {candidate.family?.name || "عائلة غير معروفة"}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <button
+                  onClick={handleAssignExistingSpouse}
+                  disabled={loadingAction === "assign-spouse" || !selectedSpouseId}
+                  className="w-full px-3 py-2 rounded bg-indigo-700 hover:bg-indigo-600 disabled:bg-slate-600 text-white text-sm"
+                >
+                  {loadingAction === "assign-spouse" ? "جاري الربط..." : "ربط الزوج/الزوجة المختارة"}
+                </button>
+
+                <div className="border-t border-slate-700 pt-2 mt-1">
+                  <p className="text-xs text-slate-400 mb-2">أو أنشئ زوج/زوجة جديدة:</p>
+                </div>
                 <input
                   value={spouseName}
                   onChange={(e) => setSpouseName(e.target.value)}

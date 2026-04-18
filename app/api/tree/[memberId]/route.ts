@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { fetchFamilyTree, fetchFocusedFamilyTree } from "@/lib/tree-logic";
 
 export const runtime = "nodejs";
+export const maxDuration = 60; // Allow up to 60 seconds for long-running queries
 
 /**
  * GET /api/tree/[memberId]
@@ -15,20 +15,23 @@ export const runtime = "nodejs";
  * - showDescendants: true | false
  * Public endpoint - no auth required
  */
+
 export async function GET(
   req: NextRequest,
   { params }: { params: { memberId: string } }
 ) {
   try {
-    const { userId } = await auth();
-    if (!userId) {
+    const memberId = params?.memberId;
+    
+    if (!memberId) {
       return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
+        { error: "Member ID is required" },
+        { status: 400 }
       );
     }
+    
+    console.log(`[Tree API] Request for member: ${memberId}`);
 
-    const { memberId } = params;
     const { searchParams } = new URL(req.url);
     const depthStr = searchParams.get("depth");
     const viewParam = String(searchParams.get("view") || "full").toLowerCase();
@@ -49,19 +52,31 @@ export async function GET(
       showSiblingsParam !== null ||
       showDescendantsParam !== null;
 
-    const tree = hasFocusedOptions
-      ? await fetchFocusedFamilyTree(memberId, maxDepth, {
-          includeParents: showParentsParam !== "false",
-          includeSiblings: showSiblingsParam !== "false",
-          includeDescendants: showDescendantsParam !== "false",
-        })
-      : await fetchFamilyTree(
-          memberId,
-          maxDepth,
-          new Set(),
-          0,
-          viewParam === "descendants" ? "DESCENDANTS" : "FULL"
-        );
+    const fetchStartTime = Date.now();
+    console.log(`[Tree API] Starting tree fetch with depth=${maxDepth}, view=${viewParam}`);
+    
+    let tree;
+    try {
+      tree = hasFocusedOptions
+        ? await fetchFocusedFamilyTree(memberId, maxDepth, {
+            includeParents: showParentsParam !== "false",
+            includeSiblings: showSiblingsParam !== "false",
+            includeDescendants: showDescendantsParam !== "false",
+          })
+        : await fetchFamilyTree(
+            memberId,
+            maxDepth,
+            new Set(),
+            0,
+            viewParam === "descendants" ? "DESCENDANTS" : "FULL"
+          );
+    } catch (fetchErr) {
+      console.error("[Tree API] Error during tree fetch:", fetchErr);
+      throw fetchErr;
+    }
+    
+    const fetchTime = Date.now() - fetchStartTime;
+    console.log(`[Tree API] Tree fetch completed in ${fetchTime}ms`);
 
     if (!tree) {
       return NextResponse.json(
@@ -72,9 +87,11 @@ export async function GET(
 
     return NextResponse.json({ data: tree }, { status: 200 });
   } catch (error) {
-    console.error("Error fetching family tree:", error);
+    console.error("[Tree API] Error fetching family tree:", error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Failed to fetch family tree";
     return NextResponse.json(
-      { error: "Failed to fetch family tree" },
+      { error: errorMessage, timestamp: new Date().toISOString() },
       { status: 500 }
     );
   }

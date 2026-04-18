@@ -166,11 +166,9 @@ async function buildMarriageGroups(
         return;
       }
 
-      if (visitedIds.has(spouseId)) {
-        spouseNodesByMarriageId.set(marriageId, null);
-        return;
-      }
-
+      // Always fetch spouse — even if already in visitedIds (e.g. they were
+      // traversed as a parent of a shared child). A shallow spouse node is
+      // safe to create regardless because it has no further recursion.
       const spouseMember = await fetchMemberWithRelationships(spouseId);
       if (!spouseMember) {
         spouseNodesByMarriageId.set(marriageId, null);

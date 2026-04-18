@@ -235,7 +235,7 @@ export default function MemberForm({
               مؤسس العائلة
             </label>
             <p className="text-xs text-slate-400 ml-auto">
-              (يمكن فقط مسؤولو النظام تعديل هذا الحقل)
+              (يمكن لمدير العائلة تعديل هذا الحقل)
             </p>
           </div>
         )}

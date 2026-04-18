@@ -42,6 +42,27 @@ function mapRelationshipCreateError(message: string): string {
   if (message.includes("Father must")) {
     return "يجب أن يكون الأب من نفس العائلة.";
   }
+  if (message.includes("Spouse relationship requires male and female")) {
+    return "علاقة الزواج تتطلب طرفين من ذكر وأنثى.";
+  }
+  if (message.includes("Spouse relationship requires opposite genders")) {
+    return "لا يمكن إنشاء علاقة زوجية بين نفس الجنس.";
+  }
+  if (message.includes("Forbidden mahram relation")) {
+    return "لا يمكن إنشاء علاقة زوجية بين المحارم (مثل الأب/الابنة، الأم/الابن، الأخ/الأخت، العم/الخال مع بنت الأخ/الأخت أو العمة/الخالة مع ابن الأخ/الأخت).";
+  }
+  if (message.includes("Forbidden in-law relation: spouse of ascendant/descendant")) {
+    return "لا يمكن الزواج بسبب المصاهرة: زوجة الأب/الجد أو زوجة الابن/الحفيد أو ما في حكمهم.";
+  }
+  if (message.includes("Forbidden in-law relation: parent/child of existing spouse")) {
+    return "لا يمكن الزواج بسبب المصاهرة: أم/أب الزوجة أو بنت/ابن الزوجة (أو ما في حكمهم).";
+  }
+  if (message.includes("Forbidden temporary relation: combining siblings in marriage")) {
+    return "لا يجوز الجمع بين الأختين في الزواج.";
+  }
+  if (message.includes("Forbidden temporary relation: combining aunt/uncle with niece/nephew")) {
+    return "لا يجوز الجمع بين المرأة وعمتها أو خالتها (وكذلك النظير بالعكس).";
+  }
 
   return "تعذر إنشاء العلاقة.";
 }
@@ -173,9 +194,19 @@ export async function POST(req: NextRequest) {
       ),
     ]);
 
-    if (!canEditFromFamily || !canEditToFamily) {
+    const canCreateRequestedRelationship =
+      type === "SPOUSE"
+        ? canEditFromFamily || canEditToFamily
+        : canEditFromFamily && canEditToFamily;
+
+    if (!canCreateRequestedRelationship) {
       return NextResponse.json(
-        { error: "غير مصرح: يجب أن تملك صلاحية تعديل العلاقات في كلتا العائلتين" },
+        {
+          error:
+            type === "SPOUSE"
+              ? "غير مصرح: تحتاج صلاحية تعديل العلاقات في عائلة واحدة على الأقل"
+              : "غير مصرح: يجب أن تملك صلاحية تعديل العلاقات في كلتا العائلتين",
+        },
         { status: 403 }
       );
     }
@@ -206,7 +237,11 @@ export async function POST(req: NextRequest) {
       errorMessage.includes("P2002") ||
       errorMessage.includes("Unique constraint") ||
       errorMessage.includes("male or female") ||
-      errorMessage.includes("Father must")
+      errorMessage.includes("Father must") ||
+      errorMessage.includes("Spouse relationship requires") ||
+      errorMessage.includes("Forbidden mahram relation") ||
+      errorMessage.includes("Forbidden in-law relation") ||
+      errorMessage.includes("Forbidden temporary relation")
       ? 400
       : 500;
 

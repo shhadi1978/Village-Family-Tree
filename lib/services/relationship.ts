@@ -3,6 +3,294 @@ import { isMarriageSchemaRuntimeError } from "@/lib/marriage-schema";
 
 type RelationshipTypeValue = "PARENT" | "SPOUSE";
 
+type ParentEdge = {
+  fromMemberId: string;
+  toMemberId: string;
+};
+
+type SpouseEdge = {
+  fromMemberId: string;
+  toMemberId: string;
+};
+
+function buildParentMaps(edges: ParentEdge[]) {
+  const parentsByChild = new Map<string, Set<string>>();
+  const childrenByParent = new Map<string, Set<string>>();
+
+  for (const edge of edges) {
+    if (!parentsByChild.has(edge.toMemberId)) {
+      parentsByChild.set(edge.toMemberId, new Set<string>());
+    }
+    parentsByChild.get(edge.toMemberId)!.add(edge.fromMemberId);
+
+    if (!childrenByParent.has(edge.fromMemberId)) {
+      childrenByParent.set(edge.fromMemberId, new Set<string>());
+    }
+    childrenByParent.get(edge.fromMemberId)!.add(edge.toMemberId);
+  }
+
+  return { parentsByChild, childrenByParent };
+}
+
+function collectAncestors(
+  memberId: string,
+  parentsByChild: Map<string, Set<string>>
+) {
+  const visited = new Set<string>();
+  const queue = [...(parentsByChild.get(memberId) || [])];
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (visited.has(current)) {
+      continue;
+    }
+
+    visited.add(current);
+    const parents = parentsByChild.get(current);
+    if (parents) {
+      for (const parentId of parents) {
+        if (!visited.has(parentId)) {
+          queue.push(parentId);
+        }
+      }
+    }
+  }
+
+  return visited;
+}
+
+function collectDescendants(
+  memberId: string,
+  childrenByParent: Map<string, Set<string>>
+) {
+  const visited = new Set<string>();
+  const queue = [...(childrenByParent.get(memberId) || [])];
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (visited.has(current)) {
+      continue;
+    }
+
+    visited.add(current);
+    const children = childrenByParent.get(current);
+    if (children) {
+      for (const childId of children) {
+        if (!visited.has(childId)) {
+          queue.push(childId);
+        }
+      }
+    }
+  }
+
+  return visited;
+}
+
+function shareAnyParent(
+  memberAId: string,
+  memberBId: string,
+  parentsByChild: Map<string, Set<string>>
+) {
+  const parentsA = parentsByChild.get(memberAId) || new Set<string>();
+  const parentsB = parentsByChild.get(memberBId) || new Set<string>();
+
+  for (const parentId of parentsA) {
+    if (parentsB.has(parentId)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isAuntOrUncleOf(
+  candidateId: string,
+  memberId: string,
+  parentsByChild: Map<string, Set<string>>,
+  childrenByParent: Map<string, Set<string>>
+) {
+  const memberParents = parentsByChild.get(memberId) || new Set<string>();
+
+  for (const parentId of memberParents) {
+    const grandParents = parentsByChild.get(parentId) || new Set<string>();
+    for (const grandParentId of grandParents) {
+      const childrenOfGrandParent = childrenByParent.get(grandParentId) || new Set<string>();
+      for (const siblingOfParentId of childrenOfGrandParent) {
+        if (siblingOfParentId !== parentId && siblingOfParentId === candidateId) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+function buildSpouseMap(edges: SpouseEdge[]) {
+  const spousesByMember = new Map<string, Set<string>>();
+
+  for (const edge of edges) {
+    if (!spousesByMember.has(edge.fromMemberId)) {
+      spousesByMember.set(edge.fromMemberId, new Set<string>());
+    }
+    spousesByMember.get(edge.fromMemberId)!.add(edge.toMemberId);
+
+    if (!spousesByMember.has(edge.toMemberId)) {
+      spousesByMember.set(edge.toMemberId, new Set<string>());
+    }
+    spousesByMember.get(edge.toMemberId)!.add(edge.fromMemberId);
+  }
+
+  return spousesByMember;
+}
+
+async function validateSpouseMahramRules(data: {
+  fromMemberId: string;
+  toMemberId: string;
+  villageId: string;
+}) {
+  const parentEdges = await db.relationship.findMany({
+    where: {
+      villageId: data.villageId,
+      type: "PARENT",
+    },
+    select: {
+      fromMemberId: true,
+      toMemberId: true,
+    },
+  });
+
+  const { parentsByChild, childrenByParent } = buildParentMaps(parentEdges);
+  const spouseEdges = await db.relationship.findMany({
+    where: {
+      villageId: data.villageId,
+      type: "SPOUSE",
+    },
+    select: {
+      fromMemberId: true,
+      toMemberId: true,
+    },
+  });
+  const spousesByMember = buildSpouseMap(spouseEdges);
+
+  const ancestorCache = new Map<string, Set<string>>();
+  const descendantCache = new Map<string, Set<string>>();
+
+  const getAncestors = (memberId: string) => {
+    if (!ancestorCache.has(memberId)) {
+      ancestorCache.set(memberId, collectAncestors(memberId, parentsByChild));
+    }
+    return ancestorCache.get(memberId)!;
+  };
+
+  const getDescendants = (memberId: string) => {
+    if (!descendantCache.has(memberId)) {
+      descendantCache.set(
+        memberId,
+        collectDescendants(memberId, childrenByParent)
+      );
+    }
+    return descendantCache.get(memberId)!;
+  };
+
+  const fromAncestors = getAncestors(data.fromMemberId);
+  const fromDescendants = getDescendants(data.fromMemberId);
+
+  if (fromAncestors.has(data.toMemberId) || fromDescendants.has(data.toMemberId)) {
+    throw new Error("Forbidden mahram relation: ascendant/descendant");
+  }
+
+  if (shareAnyParent(data.fromMemberId, data.toMemberId, parentsByChild)) {
+    throw new Error("Forbidden mahram relation: siblings");
+  }
+
+  const toIsUncleOrAuntOfFrom = isAuntOrUncleOf(
+    data.toMemberId,
+    data.fromMemberId,
+    parentsByChild,
+    childrenByParent
+  );
+
+  const fromIsUncleOrAuntOfTo = isAuntOrUncleOf(
+    data.fromMemberId,
+    data.toMemberId,
+    parentsByChild,
+    childrenByParent
+  );
+
+  if (toIsUncleOrAuntOfFrom || fromIsUncleOrAuntOfTo) {
+    throw new Error("Forbidden mahram relation: aunt/uncle with nephew/niece");
+  }
+
+  // Musaharah permanent prohibition: spouse of ascendant/descendant is forbidden.
+  for (const ancestorId of fromAncestors) {
+    if (spousesByMember.get(ancestorId)?.has(data.toMemberId)) {
+      throw new Error("Forbidden in-law relation: spouse of ascendant/descendant");
+    }
+  }
+  for (const descendantId of fromDescendants) {
+    if (spousesByMember.get(descendantId)?.has(data.toMemberId)) {
+      throw new Error("Forbidden in-law relation: spouse of ascendant/descendant");
+    }
+  }
+
+  const toAncestors = getAncestors(data.toMemberId);
+  const toDescendants = getDescendants(data.toMemberId);
+  for (const ancestorId of toAncestors) {
+    if (spousesByMember.get(ancestorId)?.has(data.fromMemberId)) {
+      throw new Error("Forbidden in-law relation: spouse of ascendant/descendant");
+    }
+  }
+  for (const descendantId of toDescendants) {
+    if (spousesByMember.get(descendantId)?.has(data.fromMemberId)) {
+      throw new Error("Forbidden in-law relation: spouse of ascendant/descendant");
+    }
+  }
+
+  // Musaharah (mother-in-law / step-child):
+  // any ancestor/descendant of an existing spouse is forbidden.
+  const existingFromSpouses = spousesByMember.get(data.fromMemberId) || new Set<string>();
+  for (const spouseId of existingFromSpouses) {
+    const spouseAncestors = getAncestors(spouseId);
+    const spouseDescendants = getDescendants(spouseId);
+    if (spouseAncestors.has(data.toMemberId) || spouseDescendants.has(data.toMemberId)) {
+      throw new Error("Forbidden in-law relation: parent/child of existing spouse");
+    }
+
+    // Temporary prohibition: cannot combine siblings, or aunt/uncle with niece/nephew.
+    if (shareAnyParent(spouseId, data.toMemberId, parentsByChild)) {
+      throw new Error("Forbidden temporary relation: combining siblings in marriage");
+    }
+
+    if (
+      isAuntOrUncleOf(spouseId, data.toMemberId, parentsByChild, childrenByParent) ||
+      isAuntOrUncleOf(data.toMemberId, spouseId, parentsByChild, childrenByParent)
+    ) {
+      throw new Error("Forbidden temporary relation: combining aunt/uncle with niece/nephew");
+    }
+  }
+
+  const existingToSpouses = spousesByMember.get(data.toMemberId) || new Set<string>();
+  for (const spouseId of existingToSpouses) {
+    const spouseAncestors = getAncestors(spouseId);
+    const spouseDescendants = getDescendants(spouseId);
+    if (spouseAncestors.has(data.fromMemberId) || spouseDescendants.has(data.fromMemberId)) {
+      throw new Error("Forbidden in-law relation: parent/child of existing spouse");
+    }
+
+    if (shareAnyParent(spouseId, data.fromMemberId, parentsByChild)) {
+      throw new Error("Forbidden temporary relation: combining siblings in marriage");
+    }
+
+    if (
+      isAuntOrUncleOf(spouseId, data.fromMemberId, parentsByChild, childrenByParent) ||
+      isAuntOrUncleOf(data.fromMemberId, spouseId, parentsByChild, childrenByParent)
+    ) {
+      throw new Error("Forbidden temporary relation: combining aunt/uncle with niece/nephew");
+    }
+  }
+}
+
 function getCanonicalMarriagePartners(memberAId: string, memberBId: string) {
   return memberAId < memberBId
     ? { partnerAId: memberAId, partnerBId: memberBId }
@@ -182,11 +470,11 @@ export async function createRelationship(
   const [fromMember, toMember] = await Promise.all([
     db.member.findUnique({
       where: { id: data.fromMemberId },
-      select: { id: true, villageId: true, familyId: true },
+      select: { id: true, villageId: true, familyId: true, gender: true },
     }),
     db.member.findUnique({
       where: { id: data.toMemberId },
-      select: { id: true, villageId: true, familyId: true },
+      select: { id: true, villageId: true, familyId: true, gender: true },
     }),
   ]);
 
@@ -207,13 +495,28 @@ export async function createRelationship(
   }
 
   if (data.type === "SPOUSE") {
+    if (fromMember.gender === "OTHER" || toMember.gender === "OTHER") {
+      throw new Error("Spouse relationship requires male and female members");
+    }
+
+    if (fromMember.gender === toMember.gender) {
+      throw new Error("Spouse relationship requires opposite genders");
+    }
+
+    await validateSpouseMahramRules({
+      fromMemberId: data.fromMemberId,
+      toMemberId: data.toMemberId,
+      villageId: data.villageId,
+    });
+
     const marriage = await ensureMarriageUnit(
       data.villageId,
       data.fromMemberId,
       data.toMemberId
     );
 
-    return db.relationship.create({
+    // Create primary direction
+    const primary = await db.relationship.create({
       data: {
         fromMemberId: data.fromMemberId,
         toMemberId: data.toMemberId,
@@ -222,6 +525,30 @@ export async function createRelationship(
         ...(marriage ? { marriageId: marriage.id } : {}),
       },
     });
+
+    // Create reverse direction so both families can see the link
+    await db.relationship.upsert({
+      where: {
+        fromMemberId_toMemberId_type: {
+          fromMemberId: data.toMemberId,
+          toMemberId: data.fromMemberId,
+          type: "SPOUSE",
+        },
+      },
+      create: {
+        fromMemberId: data.toMemberId,
+        toMemberId: data.fromMemberId,
+        type: "SPOUSE",
+        villageId: data.villageId,
+        ...(marriage ? { marriageId: marriage.id } : {}),
+      },
+      update: {
+        villageId: data.villageId,
+        ...(marriage ? { marriageId: marriage.id } : {}),
+      },
+    });
+
+    return primary;
   }
 
   // For PARENT relationships: validate one parent direction to avoid ambiguity
@@ -475,7 +802,17 @@ export async function getSpouseRelationships(memberId: string) {
     }),
   ]);
 
-  return [...spousesAsFrom, ...spousesAsTo];
+  const unique = new Map<string, any>();
+
+  for (const rel of [...spousesAsFrom, ...spousesAsTo]) {
+    const partnerId = rel.fromMemberId === memberId ? rel.toMemberId : rel.fromMemberId;
+    const key = [memberId, partnerId].sort().join("::");
+    if (!unique.has(key)) {
+      unique.set(key, rel);
+    }
+  }
+
+  return Array.from(unique.values());
 }
 
 /**
@@ -484,9 +821,37 @@ export async function getSpouseRelationships(memberId: string) {
 export async function deleteRelationship(
   relationshipId: string
 ) {
-  return db.relationship.delete({
+  const relationship = await db.relationship.findUnique({
     where: { id: relationshipId },
   });
+
+  if (!relationship) {
+    throw new Error("Relationship not found");
+  }
+
+  if (relationship.type !== "SPOUSE") {
+    return db.relationship.delete({
+      where: { id: relationshipId },
+    });
+  }
+
+  await db.relationship.deleteMany({
+    where: {
+      type: "SPOUSE",
+      OR: [
+        {
+          fromMemberId: relationship.fromMemberId,
+          toMemberId: relationship.toMemberId,
+        },
+        {
+          fromMemberId: relationship.toMemberId,
+          toMemberId: relationship.fromMemberId,
+        },
+      ],
+    },
+  });
+
+  return relationship;
 }
 
 /**

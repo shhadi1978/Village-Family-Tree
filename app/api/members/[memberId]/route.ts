@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import * as memberService from "@/lib/services/member";
 import * as familyService from "@/lib/services/family";
-import { isSuperAdmin } from "@/lib/authz";
 
 export const runtime = "nodejs";
 
@@ -100,19 +99,6 @@ export async function PUT(
         { error: "Invalid gender value" },
         { status: 400 }
       );
-    }
-
-    // Only allow super admins to modify founder status
-    if (isFounder !== undefined) {
-      if (!isSuperAdmin(userId)) {
-        return NextResponse.json(
-          {
-            error:
-              "صلاحية محدودة: فقط مسؤولو النظام يمكنهم تعديل حالة المؤسس.",
-          },
-          { status: 403 }
-        );
-      }
     }
 
     const updatedMember = await memberService.updateMember(memberId, {
