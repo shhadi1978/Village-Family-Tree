@@ -65,6 +65,9 @@ const NEXUS_NODE_HEIGHT = 12;
 const HORIZONTAL_GAP = 320;  // Increased for better spacing with larger nodes
 const VERTICAL_GAP = 220;
 const MARRIAGE_CHILD_ANCHOR_Y_OFFSET = 62;
+const CHILD_JUNCTION_Y_OFFSET = 94;
+const CHILD_CLUSTER_GAP_DESKTOP = 240;
+const CHILD_CLUSTER_GAP_MOBILE = 168;
 
 /**
  * Apply Dagre hierarchical layout to all nodes and edges.
@@ -135,7 +138,12 @@ function applyDagreLayout(
     graph.setEdge(edge.source, edge.target, { weight, minlen });
   }
 
-  dagre.layout(graph);
+  try {
+    dagre.layout(graph);
+  } catch (error) {
+    console.error("Dagre layout failed, using raw positions as fallback:", error);
+    return nodes;
+  }
 
   const positionedNodes = nodes.map((node) => {
     const pos = graph.node(node.id);
@@ -194,7 +202,184 @@ function applyDagreLayout(
     };
   });
 
+  // Clamp spouse pair span to avoid very long dashed marriage links in dense trees.
+  const maxSpouseSpan = isMobile ? (isNarrowMobile ? 220 : 280) : 360;
+
+  positionedNodes.forEach((node) => {
+    if (node.type !== "nexus") {
+      return;
+    }
+
+    const spouses = spouseSourcesByNexus.get(node.id) || [];
+    if (spouses.length < 2) {
+      return;
+    }
+
+    const spouseA = nodeById.get(spouses[0]);
+    const spouseB = nodeById.get(spouses[1]);
+    if (!spouseA || !spouseB) {
+      return;
+    }
+
+    const { width: aWidth, height: aHeight } = getNodeSize(spouseA.type);
+    const { width: bWidth, height: bHeight } = getNodeSize(spouseB.type);
+    const { width: nWidth, height: nHeight } = getNodeSize(node.type);
+
+    const centerAX = spouseA.position.x + aWidth / 2;
+    const centerBX = spouseB.position.x + bWidth / 2;
+    const centerAY = spouseA.position.y + aHeight / 2;
+    const centerBY = spouseB.position.y + bHeight / 2;
+    const span = Math.abs(centerBX - centerAX);
+
+    if (span > maxSpouseSpan) {
+      const midX = (centerAX + centerBX) / 2;
+      const targetAX = midX - maxSpouseSpan / 2;
+      const targetBX = midX + maxSpouseSpan / 2;
+      const shiftAX = targetAX - centerAX;
+      const shiftBX = targetBX - centerBX;
+      const rowCenterY = (centerAY + centerBY) / 2;
+
+      spouseA.position = {
+        x: spouseA.position.x + shiftAX,
+        y: rowCenterY - aHeight / 2,
+      };
+      spouseB.position = {
+        x: spouseB.position.x + shiftBX,
+        y: rowCenterY - bHeight / 2,
+      };
+    }
+
+    const nextCenterAX = spouseA.position.x + aWidth / 2;
+    const nextCenterBX = spouseB.position.x + bWidth / 2;
+    const nextCenterAY = spouseA.position.y + aHeight / 2;
+    const nextCenterBY = spouseB.position.y + bHeight / 2;
+
+    node.position = {
+      x: (nextCenterAX + nextCenterBX) / 2 - nWidth / 2,
+      y: (nextCenterAY + nextCenterBY) / 2 + 8 - nHeight / 2,
+    };
+  });
+
   return positionedNodes;
+}
+
+/**
+ * Keep manual tree layout compact and visually balanced:
+ * - Pack nodes on the same row to reduce excessive sibling spread.
+ * - Keep each marriage nexus centered between spouses.
+ */
+function applyManualLayoutPolish(
+  nodes: Node[],
+  edges: Edge[],
+  options: { isMobile: boolean; isNarrowMobile: boolean }
+): Node[] {
+  if (nodes.length === 0) {
+    return nodes;
+  }
+
+  const { isMobile, isNarrowMobile } = options;
+  const polished = nodes.map((node) => ({
+    ...node,
+    position: { ...node.position },
+  }));
+
+  // 1) Compact member rows while preserving each row center.
+  const rowBucketSize = isMobile ? 34 : 40;
+  const minGap = isMobile ? (isNarrowMobile ? 136 : 154) : 214;
+  const rows = new Map<number, Node[]>();
+
+  polished.forEach((node) => {
+    if (node.type !== "member") {
+      return;
+    }
+
+    const rowKey = Math.round(node.position.y / rowBucketSize);
+    const row = rows.get(rowKey) || [];
+    row.push(node);
+    rows.set(rowKey, row);
+  });
+
+  rows.forEach((rowNodes) => {
+    if (rowNodes.length <= 1) {
+      return;
+    }
+
+    rowNodes.sort((a, b) => a.position.x - b.position.x);
+    const originalCenter =
+      (rowNodes[0].position.x + rowNodes[rowNodes.length - 1].position.x) / 2;
+
+    for (let i = 1; i < rowNodes.length; i += 1) {
+      const previous = rowNodes[i - 1];
+      const current = rowNodes[i];
+      const nextMinX = previous.position.x + minGap;
+      if (current.position.x < nextMinX) {
+        current.position.x = nextMinX;
+      }
+    }
+
+    const packedCenter =
+      (rowNodes[0].position.x + rowNodes[rowNodes.length - 1].position.x) / 2;
+    const centerShift = originalCenter - packedCenter;
+    rowNodes.forEach((node) => {
+      node.position.x += centerShift;
+    });
+  });
+
+  // 2) Re-center each marriage nexus between its spouses and clamp span.
+  const nodeById = new Map(polished.map((node) => [node.id, node]));
+  const spouseEdgesToNexus = edges.filter((edge) => edge.id.includes("__to__nexus__"));
+  const spouseSourcesByNexus = new Map<string, string[]>();
+
+  spouseEdgesToNexus.forEach((edge) => {
+    const sources = spouseSourcesByNexus.get(edge.target) || [];
+    sources.push(edge.source);
+    spouseSourcesByNexus.set(edge.target, sources);
+  });
+
+  const maxSpouseSpan = isMobile ? (isNarrowMobile ? 220 : 280) : 360;
+
+  polished.forEach((node) => {
+    if (node.type !== "nexus") {
+      return;
+    }
+
+    const spouses = spouseSourcesByNexus.get(node.id) || [];
+    if (spouses.length < 2) {
+      return;
+    }
+
+    const spouseA = nodeById.get(spouses[0]);
+    const spouseB = nodeById.get(spouses[1]);
+    if (!spouseA || !spouseB) {
+      return;
+    }
+
+    const centerAX = spouseA.position.x + MEMBER_NODE_WIDTH / 2;
+    const centerBX = spouseB.position.x + MEMBER_NODE_WIDTH / 2;
+    const centerAY = spouseA.position.y + MEMBER_NODE_HEIGHT / 2;
+    const centerBY = spouseB.position.y + MEMBER_NODE_HEIGHT / 2;
+    const span = Math.abs(centerBX - centerAX);
+
+    if (span > maxSpouseSpan) {
+      const midX = (centerAX + centerBX) / 2;
+      const targetAX = midX - maxSpouseSpan / 2;
+      const targetBX = midX + maxSpouseSpan / 2;
+      spouseA.position.x += targetAX - centerAX;
+      spouseB.position.x += targetBX - centerBX;
+    }
+
+    const nextCenterAX = spouseA.position.x + MEMBER_NODE_WIDTH / 2;
+    const nextCenterBX = spouseB.position.x + MEMBER_NODE_WIDTH / 2;
+    const nextCenterAY = spouseA.position.y + MEMBER_NODE_HEIGHT / 2;
+    const nextCenterBY = spouseB.position.y + MEMBER_NODE_HEIGHT / 2;
+
+    node.position = {
+      x: (nextCenterAX + nextCenterBX) / 2 - NEXUS_NODE_WIDTH / 2,
+      y: (nextCenterAY + nextCenterBY) / 2 + 8 - NEXUS_NODE_HEIGHT / 2,
+    };
+  });
+
+  return polished;
 }
 
 function getNexusNodeId(memberId: string, spouseId: string) {
@@ -203,14 +388,48 @@ function getNexusNodeId(memberId: string, spouseId: string) {
 
 
 function compareTreeNodes(a: TreeNodeUI, b: TreeNodeUI) {
-  const timeA = a.member.dateOfBirth ? new Date(a.member.dateOfBirth).getTime() : Number.POSITIVE_INFINITY;
-  const timeB = b.member.dateOfBirth ? new Date(b.member.dateOfBirth).getTime() : Number.POSITIVE_INFINITY;
+  // RTL chronological order: older members appear more to the right.
+  const timeA = a.member.dateOfBirth ? new Date(a.member.dateOfBirth).getTime() : Number.NEGATIVE_INFINITY;
+  const timeB = b.member.dateOfBirth ? new Date(b.member.dateOfBirth).getTime() : Number.NEGATIVE_INFINITY;
+
+  if (timeA !== timeB) {
+    return timeB - timeA;
+  }
+
+  return String(b.member.fullName || "").localeCompare(String(a.member.fullName || ""), "ar");
+}
+
+function compareChildrenForRtlByBirth(a: TreeNodeUI, b: TreeNodeUI) {
+  // Desired visual order in RTL: older at the right side.
+  // Since coordinates grow left->right, place younger first.
+  const timeA = a.member.dateOfBirth
+    ? new Date(a.member.dateOfBirth).getTime()
+    : Number.NEGATIVE_INFINITY;
+  const timeB = b.member.dateOfBirth
+    ? new Date(b.member.dateOfBirth).getTime()
+    : Number.NEGATIVE_INFINITY;
 
   if (timeA !== timeB) {
     return timeA - timeB;
   }
 
   return String(a.member.fullName || "").localeCompare(String(b.member.fullName || ""), "ar");
+}
+
+function uniqueByMemberId(items: TreeNodeUI[]) {
+  const seen = new Set<string>();
+  const unique: TreeNodeUI[] = [];
+
+  items.forEach((item) => {
+    const id = item.member.id;
+    if (seen.has(id)) {
+      return;
+    }
+    seen.add(id);
+    unique.push(item);
+  });
+
+  return unique;
 }
 
 function hasDescendants(node: TreeNodeUI) {
@@ -246,6 +465,90 @@ function getHorizontalGap(node: TreeNodeUI) {
     Math.max(0, marriageCount - 1) * 120 +
     Math.max(0, densityBoost - 2) * 30
   );
+}
+
+function getChildSourceHandle(childIndex: number, totalChildren: number) {
+  if (totalChildren <= 1) {
+    return "source-bottom";
+  }
+
+  const ratio = childIndex / (totalChildren - 1);
+
+  if (ratio < 0.2) {
+    return "source-bottom-far-left";
+  }
+
+  if (ratio < 0.4) {
+    return "source-bottom-left";
+  }
+
+  if (ratio < 0.6) {
+    return "source-bottom-center";
+  }
+
+  if (ratio < 0.8) {
+    return "source-bottom-right";
+  }
+
+  return "source-bottom-far-right";
+}
+
+function getChildTargetHandle(childIndex: number, totalChildren: number) {
+  if (totalChildren <= 1) {
+    return "target-top";
+  }
+
+  const ratio = childIndex / (totalChildren - 1);
+
+  if (ratio < 0.2) {
+    return "target-top-far-left";
+  }
+
+  if (ratio < 0.4) {
+    return "target-top-left";
+  }
+
+  if (ratio < 0.6) {
+    return "target-top-center";
+  }
+
+  if (ratio < 0.8) {
+    return "target-top-right";
+  }
+
+  return "target-top-far-right";
+}
+
+function getChildEdgeOverrides(childIndex: number, totalChildren: number): Partial<Edge> {
+  if (totalChildren <= 1) {
+    return {
+      type: "smoothstep",
+      pathOptions: {
+        offset: 22,
+        borderRadius: 16,
+      },
+    };
+  }
+
+  const middle = (totalChildren - 1) / 2;
+  const distanceFromMiddle = Math.abs(childIndex - middle);
+
+  return {
+    type: "smoothstep",
+    pathOptions: {
+      // Increase offset for outer children so lines fan out and overlap less.
+      offset: 22 + distanceFromMiddle * 14,
+      borderRadius: 16 + distanceFromMiddle * 6,
+    },
+    style: {
+      strokeWidth: 2,
+      opacity: 0.95,
+    },
+  };
+}
+
+function getChildClusterGap(isMobile: boolean) {
+  return isMobile ? CHILD_CLUSTER_GAP_MOBILE : CHILD_CLUSTER_GAP_DESKTOP;
 }
 
 function buildEdge(
@@ -317,7 +620,6 @@ function convertTreeToGraph(
 
     const existing = nodeMap.get(memberId);
     if (existing) {
-      existing.position = { x, y };
       return;
     }
 
@@ -350,7 +652,6 @@ function convertTreeToGraph(
   function ensureNexusNode(id: string, x: number, y: number) {
     const existing = nodeMap.get(id);
     if (existing) {
-      existing.position = { x, y };
       return;
     }
 
@@ -434,7 +735,7 @@ function convertTreeToGraph(
         marriageId: marriage.marriageId,
         marriageNodeId: nexusNodeId,
         anchorX: nexusX,
-        children: [...marriage.children].sort(compareTreeNodes),
+        children: uniqueByMemberId([...marriage.children]).sort(compareChildrenForRtlByBirth),
       };
     });
 
@@ -449,6 +750,7 @@ function convertTreeToGraph(
     spouseLayout: ReturnType<typeof placeSpouses>
   ) {
     const sections: Array<{
+      sectionId: string;
       sourceId: string;
       anchorX: number;
       children: TreeNodeUI[];
@@ -459,12 +761,13 @@ function convertTreeToGraph(
     );
 
     // Keep only children that are not already attached to a marriage nexus.
-    const directChildren = [...treeNode.children]
+    const directChildren = uniqueByMemberId([...treeNode.children])
       .filter((child) => !marriageChildrenIds.has(child.member.id))
-      .sort(compareTreeNodes);
+      .sort(compareChildrenForRtlByBirth);
 
     if (directChildren.length > 0) {
       sections.push({
+        sectionId: `${treeNode.member.id}__children__direct`,
         sourceId: treeNode.member.id,
         anchorX: memberX,
         children: directChildren,
@@ -477,6 +780,7 @@ function convertTreeToGraph(
       }
 
       sections.push({
+        sectionId: `${layout.marriageNodeId}__children`,
         sourceId: layout.marriageNodeId,
         anchorX: layout.anchorX,
         children: layout.children,
@@ -506,29 +810,46 @@ function convertTreeToGraph(
 
     childSections.forEach((section) => {
       const childY = levelY + VERTICAL_GAP;
-      const totalUnits = section.children.reduce(
-        (sum, child) => sum + countBranchUnits(child, collapsedMemberIds),
-        0
-      );
-      let cursorX = section.anchorX - ((totalUnits - 1) * localHorizontalGap) / 2;
+      const clusterGap = Math.min(localHorizontalGap, getChildClusterGap(isMobile));
+      const junctionId = `${section.sectionId}__junction__${memberId}`;
 
-      section.children.forEach((child) => {
-        const branchUnits = countBranchUnits(child, collapsedMemberIds);
-        const childCenterX = cursorX + ((branchUnits - 1) * localHorizontalGap) / 2;
+      if (section.children.length > 1) {
+        ensureNexusNode(junctionId, section.anchorX, levelY + CHILD_JUNCTION_Y_OFFSET);
+        ensureEdge(
+          buildEdge(
+            `${section.sourceId}__to__${junctionId}__junction`,
+            section.sourceId,
+            junctionId,
+            "child",
+            "source-bottom-center",
+            "target-top",
+            {
+              type: "smoothstep",
+              pathOptions: { offset: 18, borderRadius: 14 },
+            }
+          )
+        );
+      }
+
+      let cursorX = section.anchorX - ((section.children.length - 1) * clusterGap) / 2;
+
+      section.children.forEach((child, childIndex) => {
+        const childCenterX = cursorX;
 
         placeDescendants(child, childCenterX, childY);
         ensureEdge(
           buildEdge(
             `${section.sourceId}-${child.member.id}-child`,
-            section.sourceId,
+            section.children.length > 1 ? junctionId : section.sourceId,
             child.member.id,
             "child",
-            "source-bottom",
-            "target-top"
+            getChildSourceHandle(childIndex, section.children.length),
+            getChildTargetHandle(childIndex, section.children.length),
+            getChildEdgeOverrides(childIndex, section.children.length)
           )
         );
 
-        cursorX += branchUnits * localHorizontalGap;
+        cursorX += clusterGap;
       });
     });
   }
@@ -599,27 +920,44 @@ function convertTreeToGraph(
 
     const descendantsStartY = siblingsCount > 0 ? rootY + VERTICAL_GAP * 2 : rootY + VERTICAL_GAP;
     childSections.forEach((section) => {
-      const totalUnits = section.children.reduce(
-        (sum, child) => sum + countBranchUnits(child, collapsedMemberIds),
-        0
-      );
-      let cursorX = section.anchorX - ((Math.max(totalUnits, 1) - 1) * localHorizontalGap) / 2;
+      const clusterGap = Math.min(localHorizontalGap, getChildClusterGap(isMobile));
+      const junctionId = `${section.sectionId}__junction__root`;
 
-      section.children.forEach((child) => {
-        const branchUnits = countBranchUnits(child, collapsedMemberIds);
-        const childCenterX = cursorX + ((branchUnits - 1) * localHorizontalGap) / 2;
+      if (section.children.length > 1) {
+        ensureNexusNode(junctionId, section.anchorX, rootY + CHILD_JUNCTION_Y_OFFSET);
+        ensureEdge(
+          buildEdge(
+            `${section.sourceId}__to__${junctionId}__junction__root`,
+            section.sourceId,
+            junctionId,
+            "child",
+            "source-bottom-center",
+            "target-top",
+            {
+              type: "smoothstep",
+              pathOptions: { offset: 18, borderRadius: 14 },
+            }
+          )
+        );
+      }
+
+      let cursorX = section.anchorX - ((section.children.length - 1) * clusterGap) / 2;
+
+      section.children.forEach((child, childIndex) => {
+        const childCenterX = cursorX;
         placeDescendants(child, childCenterX, descendantsStartY);
         ensureEdge(
           buildEdge(
             `${section.sourceId}-${child.member.id}-child-root`,
-            section.sourceId,
+            section.children.length > 1 ? junctionId : section.sourceId,
             child.member.id,
             "child",
-            "source-bottom",
-            "target-top"
+            getChildSourceHandle(childIndex, section.children.length),
+            getChildTargetHandle(childIndex, section.children.length),
+            getChildEdgeOverrides(childIndex, section.children.length)
           )
         );
-        cursorX += branchUnits * localHorizontalGap;
+        cursorX += clusterGap;
       });
     });
   }
@@ -711,7 +1049,7 @@ function FamilyTreeFlowCanvas({
         showExtendedMobile
       );
 
-      // Apply dagre layout with mobile + orientation awareness
+      // Use dagre for stable non-overlapping placement.
       const newNodes = applyDagreLayout(rawNodes, rawEdges, {
         isMobile,
         isPortrait,

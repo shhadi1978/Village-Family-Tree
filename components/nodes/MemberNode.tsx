@@ -95,11 +95,21 @@ export default function MemberNode({ data }: MemberNodeProps) {
         }`}
       >
         <Handle id="target-top" type="target" position={Position.Top} />
+        <Handle id="target-top-far-left" type="target" position={Position.Top} style={{ left: "18%" }} />
+        <Handle id="target-top-left" type="target" position={Position.Top} style={{ left: "34%" }} />
+        <Handle id="target-top-center" type="target" position={Position.Top} style={{ left: "50%" }} />
+        <Handle id="target-top-right" type="target" position={Position.Top} style={{ left: "66%" }} />
+        <Handle id="target-top-far-right" type="target" position={Position.Top} style={{ left: "82%" }} />
         <Handle id="source-top" type="source" position={Position.Top} />
         <Handle id="target-right" type="target" position={Position.Right} />
         <Handle id="source-right" type="source" position={Position.Right} />
         <Handle id="target-bottom" type="target" position={Position.Bottom} />
         <Handle id="source-bottom" type="source" position={Position.Bottom} />
+        <Handle id="source-bottom-far-left" type="source" position={Position.Bottom} style={{ left: "18%" }} />
+        <Handle id="source-bottom-left" type="source" position={Position.Bottom} style={{ left: "34%" }} />
+        <Handle id="source-bottom-center" type="source" position={Position.Bottom} style={{ left: "50%" }} />
+        <Handle id="source-bottom-right" type="source" position={Position.Bottom} style={{ left: "66%" }} />
+        <Handle id="source-bottom-far-right" type="source" position={Position.Bottom} style={{ left: "82%" }} />
         <Handle id="target-left" type="target" position={Position.Left} />
         <Handle id="source-left" type="source" position={Position.Left} />
 

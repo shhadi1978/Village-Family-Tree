@@ -27,6 +27,16 @@ export async function GET() {
     const roleOverride = getDevRoleOverrideByCookie();
     const roleScopeFamilyId = getDevRoleScopeFamilyIdByCookie();
     const familyRoles = await familyService.getUserFamilyRoleMap(userId);
+    let manageableVillageIds: string[] = [];
+    try {
+      manageableVillageIds = await familyService.getVillageIdsWhereUserIsAdmin(
+        userId
+      );
+    } catch (error) {
+      // Do not fail permissions endpoint if optional village-wide lookup fails.
+      console.error("Failed to load manageable village ids:", error);
+      manageableVillageIds = [];
+    }
     const baseManagedFamilyIds = Object.entries(familyRoles)
       .filter(([, role]) => hasFamilyPermission(role, "member:update"))
       .map(([familyId]) => familyId);
@@ -42,7 +52,9 @@ export async function GET() {
           roleOverride,
           roleScopeFamilyId,
           familyRoles,
+          manageableVillageIds,
           managedFamilyIds,
+          canCreateFamily: superAdmin || manageableVillageIds.length > 0,
           canManageAnyFamily: superAdmin || managedFamilyIds.length > 0,
         },
       },

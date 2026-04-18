@@ -479,6 +479,82 @@ export async function hasVillageWideFamilyAdminRole(
 }
 
 /**
+ * Get village ids where user has village-wide management role.
+ */
+export async function getVillageIdsWithVillageWideRole(
+  clerkId: string
+): Promise<string[]> {
+  const mappings = await db.familyAdmin.findMany({
+    where: {
+      clerkId,
+      role: ALL_FAMILIES_ADMIN_ROLE,
+    },
+    select: {
+      family: {
+        select: {
+          villageId: true,
+        },
+      },
+    },
+  });
+
+  return Array.from(
+    new Set(
+      mappings
+        .map((item) => item.family?.villageId)
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+}
+
+/**
+ * Get village ids where user has admin or all_families_admin role on at least one family.
+ */
+export async function getVillageIdsWhereUserIsAdmin(
+  clerkId: string
+): Promise<string[]> {
+  const mappings = await db.familyAdmin.findMany({
+    where: {
+      clerkId,
+      role: {
+        in: ["admin", ALL_FAMILIES_ADMIN_ROLE],
+      },
+    },
+    select: {
+      family: {
+        select: {
+          villageId: true,
+        },
+      },
+    },
+  });
+
+  return Array.from(
+    new Set(
+      mappings
+        .map((item) => item.family?.villageId)
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+}
+
+/**
+ * Whether user can create a family in a village.
+ * Allowed for super admin, village-wide family managers, or family admins in that village.
+ */
+export async function userCanCreateFamilyInVillage(
+  clerkId: string,
+  villageId: string
+): Promise<boolean> {
+  if (isSuperAdmin(clerkId)) {
+    return true;
+  }
+
+  const adminVillages = await getVillageIdsWhereUserIsAdmin(clerkId);
+  return adminVillages.includes(villageId);
+}
+
+/**
  * Get all family ids a user can manage, including village-wide assignments.
  */
 export async function getManagedFamilyIdsForUser(clerkId: string) {

@@ -19,7 +19,9 @@ export type UserPermissions = {
     | null;
   roleScopeFamilyId?: string | null;
   familyRoles: Record<string, FamilyRole>;
+  manageableVillageIds: string[];
   managedFamilyIds: string[];
+  canCreateFamily: boolean;
   canManageAnyFamily: boolean;
 };
 
@@ -69,6 +71,10 @@ export function usePermissions() {
   );
 
   const familyRoleMap = permissions?.familyRoles || {};
+  const manageableVillageSet = useMemo(
+    () => new Set(permissions?.manageableVillageIds || []),
+    [permissions]
+  );
 
   const hasPermission = (
     familyId: string | null | undefined,
@@ -105,6 +111,22 @@ export function usePermissions() {
     return permissions.isSuperAdmin || managedFamilySet.has(familyId);
   };
 
+  const canCreateFamilyInVillage = (villageId?: string | null) => {
+    if (!permissions) {
+      return false;
+    }
+
+    if (permissions.isSuperAdmin) {
+      return true;
+    }
+
+    if (!villageId) {
+      return Boolean(permissions.canCreateFamily);
+    }
+
+    return manageableVillageSet.has(villageId);
+  };
+
   const effectiveRoleLabel = (() => {
     const role = permissions?.roleOverride;
     if (role === "SUPER_ADMIN") return "مدير عام";
@@ -122,12 +144,14 @@ export function usePermissions() {
     loading,
     error,
     isSuperAdmin: !!permissions?.isSuperAdmin,
+    canCreateFamily: !!permissions?.canCreateFamily,
     canManageAnyFamily: !!permissions?.canManageAnyFamily,
     effectiveRoleLabel,
     roleScopeFamilyId: permissions?.roleScopeFamilyId || null,
     getFamilyRole,
     hasFamilyPermission: hasPermission,
     canManageFamily,
+    canCreateFamilyInVillage,
     canEditFamily: (familyId?: string | null) => hasPermission(familyId, "family:update"),
     canDeleteFamily: (familyId?: string | null) => hasPermission(familyId, "family:delete"),
     canCreateMember: (familyId?: string | null) => hasPermission(familyId, "member:create"),

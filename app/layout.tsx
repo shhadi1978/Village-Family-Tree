@@ -8,6 +8,9 @@ export const metadata: Metadata = {
   title: "شجرة عائلات القرية",
   description: "توثيق واستعراض علاقات العائلات داخل القرية.",
   manifest: "/manifest.webmanifest",
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
   icons: {
     icon: "/icon.svg",
     shortcut: "/icon.svg",

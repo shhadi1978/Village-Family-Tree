@@ -31,7 +31,7 @@ type SearchMember = {
 export default function DashboardPage() {
   const { families, loading, error, getFamilies } = useFamilies();
   const { getMembers } = useMembers();
-  const { isSuperAdmin, canManageAnyFamily } = usePermissions();
+  const { isSuperAdmin, canManageAnyFamily, canCreateFamilyInVillage } = usePermissions();
   const [villageId, setVillageId] = useState<string | null>(null);
   const [globalSearch, setGlobalSearch] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
@@ -256,7 +256,7 @@ export default function DashboardPage() {
           <h2 className="text-xl font-bold text-white">
             {canManageAnyFamily ? "عائلاتك" : "عائلات القرية"}
           </h2>
-          {isSuperAdmin && (
+          {canCreateFamilyInVillage(villageId) && (
             <Link
               href="/dashboard/families/new"
               className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition"
@@ -296,7 +296,7 @@ export default function DashboardPage() {
         ) : (
           <div className="text-center py-8">
             <p className="text-slate-400 mb-4">لا توجد عائلات بعد</p>
-            {isSuperAdmin && (
+            {canCreateFamilyInVillage(villageId) && (
               <Link
                 href="/dashboard/families/new"
                 className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition"

@@ -44,7 +44,7 @@ const roleOptions = [
   { value: "admin", label: "مدير" },
   { value: "editor", label: "محرر" },
   { value: "viewer", label: "مشاهد" },
-  { value: "all_families_admin", label: "مدير كل العائلات في القرية" },
+  { value: "all_families_admin", label: "مدير كل العائلات في القرية (يشمل إنشاء عائلات)" },
 ];
 
 function getRoleLabel(role: string) {
@@ -474,6 +474,9 @@ export default function UsersManagementPage() {
           <h1 className="text-3xl font-bold text-white">إدارة المستخدمين</h1>
           <p className="mt-1 text-slate-400">
             ابحث عن أي مستخدم مسجل، ثم امنحه صلاحية إدارة عائلة أو عدل دوره أو أزل الصلاحية.
+          </p>
+          <p className="mt-1 text-slate-500 text-sm">
+            المدير العام يمكنه منح دور "مدير كل العائلات" ليتمكن المستخدم من إضافة عائلات جديدة داخل القرية.
           </p>
         </div>
         <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm text-blue-200">

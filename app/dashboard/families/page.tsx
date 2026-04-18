@@ -12,7 +12,7 @@ type FamilySortMode = "members-desc" | "members-asc" | "name-asc";
 export default function FamiliesPage() {
   const { families, loading, error, getFamilies, deleteFamily } = useFamilies();
   const {
-    isSuperAdmin,
+    canCreateFamilyInVillage,
     canManageAnyFamily,
     canManageFamily,
     canEditFamily,
@@ -109,7 +109,7 @@ export default function FamiliesPage() {
             {canManageAnyFamily ? "إدارة جميع عائلات القرية" : "استعراض جميع عائلات القرية"}
           </p>
         </div>
-        {isSuperAdmin && (
+        {canCreateFamilyInVillage(villageId) && (
           <Link
             href="/dashboard/families/new"
             className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition"
@@ -245,7 +245,7 @@ export default function FamiliesPage() {
               ? "لا توجد عائلات مطابقة لنتيجة البحث"
               : "لم يتم إنشاء أي عائلة بعد"}
           </p>
-          {isSuperAdmin && (
+          {canCreateFamilyInVillage(villageId) && (
             <Link
               href="/dashboard/families/new"
               className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition"

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import * as familyService from "@/lib/services/family";
-import { isSuperAdmin } from "@/lib/authz";
 
 export const runtime = "nodejs";
 
@@ -138,13 +137,6 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       );
     }
-    if (!isSuperAdmin(userId)) {
-      return NextResponse.json(
-        { error: "Forbidden: Super Admin only" },
-        { status: 403 }
-      );
-    }
-
     const body = await req.json();
     const { name, slug, villageId, description, photoUrl } = body;
 
@@ -153,6 +145,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "name, slug, and villageId are required" },
         { status: 400 }
+      );
+    }
+
+    const canCreateFamily = await familyService.userCanCreateFamilyInVillage(
+      userId,
+      villageId
+    );
+    if (!canCreateFamily) {
+      return NextResponse.json(
+        {
+          error:
+            "Forbidden: only Super Admin or village-wide family manager can create families",
+        },
+        { status: 403 }
       );
     }
 

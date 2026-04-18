@@ -9,7 +9,7 @@ import Link from "next/link";
 
 export default function NewFamilyPage() {
   const router = useRouter();
-  const { isSuperAdmin, loading: permissionsLoading } = usePermissions();
+  const { canCreateFamilyInVillage, loading: permissionsLoading } = usePermissions();
   const [villageId, setVillageId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -24,11 +24,11 @@ export default function NewFamilyPage() {
     router.push("/dashboard/families");
   };
 
-  if (permissionsLoading) {
+  if (permissionsLoading || !villageId) {
     return <div className="text-slate-400">جاري التحقق من الصلاحيات...</div>;
   }
 
-  if (!isSuperAdmin) {
+  if (!canCreateFamilyInVillage(villageId)) {
     return (
       <div className="space-y-6">
         <Link
@@ -39,7 +39,7 @@ export default function NewFamilyPage() {
           رجوع
         </Link>
         <div className="bg-yellow-900 border border-yellow-700 rounded-lg p-4 text-yellow-200">
-          هذا الخيار متاح فقط لـ Super Admin.
+          هذا الخيار متاح فقط للمدير العام أو مدير كل العائلات في القرية.
         </div>
       </div>
     );

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Plus, Trash2, Search, UserCheck, Upload, Loader2 } from "lucide-react";
+import { X, Plus, Trash2, Search, UserCheck, Upload, Loader2, Pencil, ChevronDown, ChevronUp } from "lucide-react";
 import { formatDateAr } from "@/lib/i18n/format";
 import { getMemberDisplayName } from "@/lib/member-display";
 import { useRouter } from "next/navigation";
@@ -59,6 +59,19 @@ export default function MemberDetailDialog({
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
+
+  // Inline edit state
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editFirstName, setEditFirstName] = useState("");
+  const [editLastName, setEditLastName] = useState("");
+  const [editNickname, setEditNickname] = useState("");
+  const [editGender, setEditGender] = useState("");
+  const [editDateOfBirth, setEditDateOfBirth] = useState("");
+  const [editDateOfDeath, setEditDateOfDeath] = useState("");
+  const [editBio, setEditBio] = useState("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editSuccess, setEditSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -119,10 +132,60 @@ export default function MemberDetailDialog({
     setSpouseCandidates([]);
     setSelectedSpouseId("");
     setPhotoUrl(member.photoUrl || null);
+    setIsEditOpen(false);
+    setEditFirstName(member.firstName || "");
+    setEditLastName(member.lastName || "");
+    setEditNickname((member as any).nickname || "");
+    setEditGender(member.gender ? String(member.gender).toUpperCase() : "MALE");
+    setEditDateOfBirth(formatDateForInput((member as any).dateOfBirth));
+    setEditDateOfDeath(formatDateForInput((member as any).dateOfDeath));
+    setEditBio((member as any).bio || "");
+    setEditError(null);
+    setEditSuccess(null);
     loadMotherStatus();
   }, [isOpen, member]);
 
   if (!isOpen || !member) return null;
+
+  function formatDateForInput(value?: string | Date | null): string {
+    if (!value) return "";
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return "";
+    return d.toISOString().slice(0, 10);
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editFirstName.trim()) {
+      setEditError("الاسم الأول مطلوب");
+      return;
+    }
+    setIsSavingEdit(true);
+    setEditError(null);
+    setEditSuccess(null);
+    try {
+      const response = await fetch(`/api/members/${member.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName: editFirstName.trim(),
+          lastName: editLastName.trim(),
+          nickname: editNickname.trim() || null,
+          gender: editGender,
+          dateOfBirth: editDateOfBirth || null,
+          dateOfDeath: editDateOfDeath || null,
+          bio: editBio.trim() || null,
+        }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(result?.error || "فشل الحفظ");
+      setEditSuccess("تم حفظ التعديلات بنجاح");
+      onRefresh();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "خطأ غير معروف");
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
 
   const memberGender = member.gender ? String(member.gender).toUpperCase() : "OTHER";
   const isMale = memberGender === "MALE";
@@ -571,6 +634,102 @@ export default function MemberDetailDialog({
 
           {error && <div className="p-3 bg-red-900/30 border border-red-700 rounded text-red-300 text-sm">{error}</div>}
           {successMessage && <div className="p-3 bg-emerald-900/30 border border-emerald-700 rounded text-emerald-300 text-sm">{successMessage}</div>}
+
+          {/* ── Inline edit section ── */}
+          <div className="rounded-lg border border-slate-600 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setIsEditOpen((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-slate-700/60 hover:bg-slate-700 transition text-sm font-medium text-white"
+            >
+              <span className="flex items-center gap-2"><Pencil size={14} /> تعديل البيانات الأساسية</span>
+              {isEditOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+            {isEditOpen && (
+              <div className="p-4 space-y-3 bg-slate-800/60">
+                {editError && <div className="p-2 bg-red-900/30 border border-red-700 rounded text-red-300 text-xs">{editError}</div>}
+                {editSuccess && <div className="p-2 bg-emerald-900/30 border border-emerald-700 rounded text-emerald-300 text-xs">{editSuccess}</div>}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">الاسم الأول *</label>
+                    <input
+                      value={editFirstName}
+                      onChange={(e) => setEditFirstName(e.target.value)}
+                      className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-600 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">اسم العائلة</label>
+                    <input
+                      value={editLastName}
+                      onChange={(e) => setEditLastName(e.target.value)}
+                      className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-600 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">الكنية / اللقب</label>
+                  <input
+                    value={editNickname}
+                    onChange={(e) => setEditNickname(e.target.value)}
+                    placeholder="اختياري"
+                    className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-600 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">الجنس</label>
+                  <select
+                    value={editGender}
+                    onChange={(e) => setEditGender(e.target.value)}
+                    className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-600 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="MALE">ذكر</option>
+                    <option value="FEMALE">أنثى</option>
+                    <option value="OTHER">غير محدد</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">تاريخ الميلاد</label>
+                    <input
+                      type="date"
+                      value={editDateOfBirth}
+                      onChange={(e) => setEditDateOfBirth(e.target.value)}
+                      className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-600 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">تاريخ الوفاة</label>
+                    <input
+                      type="date"
+                      value={editDateOfDeath}
+                      onChange={(e) => setEditDateOfDeath(e.target.value)}
+                      className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-600 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">نبذة / ملاحظات</label>
+                  <textarea
+                    value={editBio}
+                    onChange={(e) => setEditBio(e.target.value)}
+                    rows={3}
+                    placeholder="اختياري"
+                    className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-600 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSaveEdit}
+                  disabled={isSavingEdit}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 text-white rounded text-sm font-medium transition"
+                >
+                  {isSavingEdit ? <Loader2 size={16} className="animate-spin" /> : <Pencil size={16} />}
+                  {isSavingEdit ? "جاري الحفظ..." : "حفظ التعديلات"}
+                </button>
+              </div>
+            )}
+          </div>
 
           <div className="space-y-2 pt-2">
             <div className="rounded-lg border border-slate-700 p-3 space-y-2">
