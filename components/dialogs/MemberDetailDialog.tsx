@@ -50,6 +50,9 @@ export default function MemberDetailDialog({
   const [spouseSearch, setSpouseSearch] = useState("");
   const [spouseCandidates, setSpouseCandidates] = useState<Member[]>([]);
   const [selectedSpouseId, setSelectedSpouseId] = useState<string>("");
+  const [isExternalSpouse, setIsExternalSpouse] = useState(false);
+  const [externalOriginText, setExternalOriginText] = useState("");
+  const [externalNotes, setExternalNotes] = useState("");
   const [motherSearch, setMotherSearch] = useState("");
   const [motherCandidates, setMotherCandidates] = useState<Member[]>([]);
   const [selectedMotherId, setSelectedMotherId] = useState<string>("");
@@ -131,6 +134,9 @@ export default function MemberDetailDialog({
     setSpouseSearch("");
     setSpouseCandidates([]);
     setSelectedSpouseId("");
+    setIsExternalSpouse(false);
+    setExternalOriginText("");
+    setExternalNotes("");
     setPhotoUrl(member.photoUrl || null);
     setIsEditOpen(false);
     setEditFirstName(member.firstName || "");
@@ -272,6 +278,9 @@ export default function MemberDetailDialog({
           familyId: member.familyId,
           villageId: member.villageId,
           spouseId: member.id,
+          isExternal: isExternalSpouse,
+          externalOriginText: isExternalSpouse ? externalOriginText : undefined,
+          externalNotes: isExternalSpouse ? externalNotes : undefined,
         }),
       });
 
@@ -281,6 +290,9 @@ export default function MemberDetailDialog({
       }
 
       setSpouseName("");
+      setExternalOriginText("");
+      setExternalNotes("");
+      setIsExternalSpouse(false);
       setSuccessMessage("تمت إضافة الزوج/الزوجة بنجاح");
       onRefresh();
     } catch (err) {
@@ -874,12 +886,38 @@ export default function MemberDetailDialog({
                 <div className="border-t border-slate-700 pt-2 mt-1">
                   <p className="text-xs text-slate-400 mb-2">أو أنشئ زوج/زوجة جديدة:</p>
                 </div>
+                <label className="flex items-center gap-2 text-xs text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={isExternalSpouse}
+                    onChange={(e) => setIsExternalSpouse(e.target.checked)}
+                    className="accent-indigo-500"
+                  />
+                  <span>من خارج القرية (لا تتبع عائلة داخل القرية)</span>
+                </label>
                 <input
                   value={spouseName}
                   onChange={(e) => setSpouseName(e.target.value)}
                   placeholder="اكتب الاسم الكامل للزوج/الزوجة"
                   className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-600 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
+                {isExternalSpouse && (
+                  <>
+                    <input
+                      value={externalOriginText}
+                      onChange={(e) => setExternalOriginText(e.target.value)}
+                      placeholder="المنشأ (مثال: من قرية كذا / مدينة كذا)"
+                      className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-600 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <textarea
+                      value={externalNotes}
+                      onChange={(e) => setExternalNotes(e.target.value)}
+                      placeholder="ملاحظات إضافية (اختياري)"
+                      rows={2}
+                      className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-600 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                    />
+                  </>
+                )}
                 <button
                   onClick={() => handleAddSpouse(allowedSpouseGender)}
                   disabled={loadingAction?.startsWith("add-spouse") || !spouseName.trim()}

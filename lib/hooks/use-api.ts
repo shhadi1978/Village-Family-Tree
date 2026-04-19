@@ -42,10 +42,27 @@ export function useApi<T = unknown>(): UseApiResult<T> {
         });
 
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(
-            errorData.error || `HTTP Error: ${response.status}`
-          );
+          const rawErrorBody = await response.text();
+          let parsedError: { error?: string; details?: string } | null = null;
+
+          if (rawErrorBody) {
+            try {
+              parsedError = JSON.parse(rawErrorBody) as {
+                error?: string;
+                details?: string;
+              };
+            } catch {
+              parsedError = null;
+            }
+          }
+
+          const messageFromBody =
+            parsedError?.error ||
+            parsedError?.details ||
+            rawErrorBody ||
+            response.statusText;
+
+          throw new Error(`HTTP ${response.status}: ${messageFromBody}`);
         }
 
         const result = await response.json();

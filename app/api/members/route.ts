@@ -7,6 +7,17 @@ export const runtime = "nodejs";
 
 const ALLOWED_GENDERS = ["MALE", "FEMALE", "OTHER"] as const;
 
+function isDatabaseAccessDeniedError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || "");
+  const lower = message.toLowerCase();
+
+  return (
+    message.includes("P1010") ||
+    lower.includes("denied access on the database") ||
+    lower.includes("permission denied for database")
+  );
+}
+
 /**
  * GET /api/members
  * Fetch members from a family or search across a village
@@ -78,8 +89,24 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ data: members }, { status: 200 });
   } catch (error) {
     console.error("Error fetching members:", error);
+
+    if (isDatabaseAccessDeniedError(error)) {
+      return NextResponse.json(
+        {
+          error:
+            "تعذر الوصول إلى قاعدة البيانات (Database access denied). تحقق من DATABASE_URL / DIRECT_URL وصلاحيات المستخدم على قاعدة البيانات.",
+        },
+        { status: 503 }
+      );
+    }
+
+    const details = error instanceof Error ? error.message : String(error || "");
+
     return NextResponse.json(
-      { error: "Failed to fetch members" },
+      {
+        error: "Failed to fetch members",
+        ...(process.env.NODE_ENV !== "production" ? { details } : {}),
+      },
       { status: 500 }
     );
   }
@@ -115,6 +142,9 @@ export async function POST(req: NextRequest) {
       gender,
       familyId,
       villageId,
+      isExternal,
+      externalOriginText,
+      externalNotes,
       fatherId,
       motherId,
       parentId,
@@ -127,11 +157,11 @@ export async function POST(req: NextRequest) {
     } = body;
 
     // Validate required fields
-    if (!firstName || !lastName || !gender || !familyId || !villageId) {
+    if (!firstName || !lastName || !gender || !villageId) {
       return NextResponse.json(
         {
           error:
-            "firstName, lastName, gender, familyId, and villageId are required",
+            "firstName, lastName, gender, and villageId are required",
         },
         { status: 400 }
       );
@@ -160,21 +190,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const canCreateMember = await familyService.userHasFamilyPermission(
-      userId,
-      familyId,
-      "member:create"
-    );
+    const wantsExternalSpouse = Boolean(isExternal) && Boolean(spouseId);
 
-    if (!canCreateMember) {
-      return NextResponse.json(
-        { error: "Unauthorized: You do not have permission to add members to this family" },
-        { status: 403 }
-      );
-    }
+    let resolvedFamilyId = familyId as string | undefined;
+    let spouseMember: Awaited<ReturnType<typeof memberService.getMember>> | null = null;
 
     if (spouseId) {
-      const spouseMember = await memberService.getMember(spouseId);
+      spouseMember = await memberService.getMember(spouseId);
       if (!spouseMember) {
         return NextResponse.json(
           { error: "العضو المراد إضافة زوج/زوجة له غير موجود" },
@@ -198,6 +220,49 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
+
+      // Permission should be based on the spouse's family (the family user is editing).
+      const canCreateSpouse = await familyService.userHasFamilyPermission(
+        userId,
+        spouseMember.familyId,
+        "member:create"
+      );
+
+      if (!canCreateSpouse) {
+        return NextResponse.json(
+          { error: "Unauthorized: You do not have permission to add spouse members to this family" },
+          { status: 403 }
+        );
+      }
+
+      if (wantsExternalSpouse) {
+        const externalFamily = await familyService.ensureExternalFamilyForVillage(
+          villageId
+        );
+        resolvedFamilyId = externalFamily.id;
+      } else {
+        resolvedFamilyId = resolvedFamilyId || spouseMember.familyId;
+      }
+    } else {
+      if (!resolvedFamilyId) {
+        return NextResponse.json(
+          { error: "familyId is required when creating non-spouse members" },
+          { status: 400 }
+        );
+      }
+
+      const canCreateMember = await familyService.userHasFamilyPermission(
+        userId,
+        resolvedFamilyId,
+        "member:create"
+      );
+
+      if (!canCreateMember) {
+        return NextResponse.json(
+          { error: "Unauthorized: You do not have permission to add members to this family" },
+          { status: 403 }
+        );
+      }
     }
 
     // Create member with appropriate relationship
@@ -207,8 +272,14 @@ export async function POST(req: NextRequest) {
       lastName,
       nickname: typeof nickname === "string" ? nickname.trim() || undefined : undefined,
       gender,
-      familyId,
+      familyId: resolvedFamilyId!,
       villageId,
+      isExternal: wantsExternalSpouse,
+      spouseId: spouseId || undefined,
+      externalOriginText:
+        typeof externalOriginText === "string" ? externalOriginText.trim() || undefined : undefined,
+      externalNotes:
+        typeof externalNotes === "string" ? externalNotes.trim() || undefined : undefined,
       fatherId: spouseId ? undefined : resolvedParentId,
       motherId: undefined,
       isFounder: false,
@@ -244,6 +315,16 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Failed to create member";
+
+    if (isDatabaseAccessDeniedError(error)) {
+      return NextResponse.json(
+        {
+          error:
+            "تعذر الوصول إلى قاعدة البيانات (Database access denied). تحقق من DATABASE_URL / DIRECT_URL وصلاحيات المستخدم على قاعدة البيانات.",
+        },
+        { status: 503 }
+      );
+    }
 
     const isMissingFounderColumn =
       errorMessage.includes("isFounder") &&

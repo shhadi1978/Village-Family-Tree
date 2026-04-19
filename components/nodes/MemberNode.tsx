@@ -15,6 +15,9 @@ type MemberNodeData = {
   firstName?: string | null;
   lastName?: string | null;
   gender?: string | null;
+  isExternal?: boolean;
+  externalOriginText?: string | null;
+  externalNotes?: string | null;
   dateOfBirth?: string | Date | null;
   dateOfDeath?: string | Date | null;
   photoUrl?: string | null;
@@ -148,6 +151,17 @@ export default function MemberNode({ data }: MemberNodeProps) {
             <span className="inline-block px-2 py-0.5 founder-badge text-[11px] rounded">
               مؤسس العائلة
             </span>
+          </div>
+        )}
+
+        {member.isExternal && (
+          <div className="mt-1 text-center space-y-1">
+            <span className="inline-block px-2 py-0.5 rounded text-[11px] bg-amber-900/60 border border-amber-600 text-amber-200">
+              من خارج القرية
+            </span>
+            {member.externalOriginText && (
+              <p className="text-[11px] text-amber-300/90 line-clamp-1">{member.externalOriginText}</p>
+            )}
           </div>
         )}
 

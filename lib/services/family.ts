@@ -15,6 +15,8 @@ import {
 
 export type FamilySortMode = "MEMBERS_DESC" | "MEMBERS_ASC" | "NAME_ASC";
 export const ALL_FAMILIES_ADMIN_ROLE = "all_families_admin";
+export const EXTERNAL_FAMILY_SLUG = "external-spouses";
+export const EXTERNAL_FAMILY_NAME_AR = "العائلات الخارجية";
 
 export type { FamilyPermissionAction, FamilyRole };
 
@@ -97,6 +99,24 @@ export async function createFamily(
 }
 
 /**
+ * Ensure a reserved family exists for spouses from outside the village.
+ */
+export async function ensureExternalFamilyForVillage(villageId: string) {
+  const existing = await getFamilyBySlug(villageId, EXTERNAL_FAMILY_SLUG);
+  if (existing) {
+    return existing;
+  }
+
+  return createFamily({
+    name: EXTERNAL_FAMILY_NAME_AR,
+    slug: EXTERNAL_FAMILY_SLUG,
+    villageId,
+    description:
+      "عائلة نظامية لتجميع الأفراد/الزوجات/الأزواج القادمين من خارج القرية.",
+  });
+}
+
+/**
  * Get family by ID with all members
  */
 export async function getFamilyWithMembers(familyId: string) {
@@ -146,6 +166,9 @@ export async function getVillageFamilies(
   return db.family.findMany({
     where: {
       villageId,
+      slug: {
+        not: EXTERNAL_FAMILY_SLUG,
+      },
       ...(normalizedSearch
         ? {
             name: {
@@ -183,6 +206,9 @@ export async function getVillageFamiliesPaginated(
 
   const where = {
     villageId,
+    slug: {
+      not: EXTERNAL_FAMILY_SLUG,
+    },
     ...(normalizedSearch
       ? {
           name: {

@@ -11,6 +11,75 @@ function isUnknownFounderFieldError(error: unknown): boolean {
   );
 }
 
+function isMissingExternalFieldError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || "");
+  const lower = message.toLowerCase();
+
+  return (
+    (message.includes("isExternal") ||
+      message.includes("externalOriginText") ||
+      message.includes("externalNotes")) &&
+    (
+      lower.includes("does not exist") ||
+      message.includes("P2022") ||
+      lower.includes("unknown argument") ||
+      lower.includes("unknown field")
+    )
+  );
+}
+
+function buildMemberSelect(includeFamily: boolean, includeExternalFields: boolean) {
+  return {
+    id: true,
+    firstName: true,
+    lastName: true,
+    nickname: true,
+    fullName: true,
+    gender: true,
+    isFounder: true,
+    ...(includeExternalFields
+      ? {
+          isExternal: true,
+          externalOriginText: true,
+          externalNotes: true,
+        }
+      : {}),
+    dateOfBirth: true,
+    dateOfDeath: true,
+    bio: true,
+    photoUrl: true,
+    familyId: true,
+    villageId: true,
+    createdAt: true,
+    updatedAt: true,
+    ...(includeFamily
+      ? {
+          family: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+            },
+          },
+        }
+      : {}),
+    relationshipsAsTo: {
+      where: { type: "PARENT" },
+      select: {
+        type: true,
+        fromMember: {
+          select: {
+            id: true,
+            firstName: true,
+            fullName: true,
+            gender: true,
+          },
+        },
+      },
+    },
+  };
+}
+
 /**
  * Create a new family member
  */
@@ -20,8 +89,12 @@ export async function createMember(
     lastName: string;
     nickname?: string;
     gender: GenderValue;
+    isExternal?: boolean;
+    externalOriginText?: string;
+    externalNotes?: string;
     familyId: string;
     villageId: string;
+    spouseId?: string;
     fatherId?: string;
     motherId?: string;
     isFounder?: boolean;
@@ -32,13 +105,38 @@ export async function createMember(
   }
 ) {
   const isFounder = Boolean(data.isFounder);
+  const isExternal = Boolean(data.isExternal);
+  const isSpouseCreation = Boolean(data.spouseId);
 
-  if (!isFounder && !data.fatherId) {
+  if (!isFounder && !isSpouseCreation && !data.fatherId) {
     throw new Error("fatherId is required");
   }
 
   if (data.motherId && data.fatherId && data.motherId === data.fatherId) {
     throw new Error("Father and mother cannot be the same member");
+  }
+
+  if (isSpouseCreation) {
+    const fullName = `${data.firstName} ${data.lastName}`.trim();
+
+    return db.member.create({
+      data: {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        nickname: data.nickname?.trim() || null,
+        fullName,
+        gender: data.gender,
+        isExternal,
+        externalOriginText: data.externalOriginText?.trim() || null,
+        externalNotes: data.externalNotes?.trim() || null,
+        familyId: data.familyId,
+        villageId: data.villageId,
+        dateOfBirth: data.dateOfBirth,
+        dateOfDeath: data.dateOfDeath,
+        bio: data.bio,
+        photoUrl: data.photoUrl,
+      },
+    });
   }
 
   if (isFounder) {
@@ -95,6 +193,9 @@ export async function createMember(
       isFounder: true,
       fullName: founderFullName,
       gender: data.gender,
+      isExternal: false,
+      externalOriginText: null,
+      externalNotes: null,
       familyId: data.familyId,
       villageId: data.villageId,
       dateOfBirth: data.dateOfBirth,
@@ -183,6 +284,9 @@ export async function createMember(
         nickname: data.nickname?.trim() || null,
         fullName,
         gender: data.gender,
+        isExternal,
+        externalOriginText: data.externalOriginText?.trim() || null,
+        externalNotes: data.externalNotes?.trim() || null,
         familyId: data.familyId,
         villageId: data.villageId,
         dateOfBirth: data.dateOfBirth,
@@ -254,166 +358,101 @@ export async function getMember(memberId: string) {
  * Get all members in a family
  */
 export async function getFamilyMembers(familyId: string) {
-  return db.member.findMany({
-    where: { familyId },
-    orderBy: { fullName: "asc" },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      nickname: true,
-      fullName: true,
-      gender: true,
-      isFounder: true,
-      dateOfBirth: true,
-      dateOfDeath: true,
-      bio: true,
-      photoUrl: true,
-      familyId: true,
-      villageId: true,
-      createdAt: true,
-      updatedAt: true,
-      relationshipsAsTo: {
-        where: { type: "PARENT" },
-        select: {
-          type: true,
-          fromMember: {
-            select: {
-              id: true,
-              firstName: true,
-              fullName: true,
-              gender: true,
-            },
-          },
-        },
-      },
-    },
-  });
+  try {
+    return await db.member.findMany({
+      where: { familyId },
+      orderBy: { fullName: "asc" },
+      select: buildMemberSelect(false, true),
+    });
+  } catch (error) {
+    if (!isMissingExternalFieldError(error)) {
+      throw error;
+    }
+
+    return db.member.findMany({
+      where: { familyId },
+      orderBy: { fullName: "asc" },
+      select: buildMemberSelect(false, false),
+    });
+  }
 }
 
 /**
  * Get all members in a village
  */
 export async function getVillageMembers(villageId: string) {
-  return db.member.findMany({
-    where: { villageId },
-    orderBy: { fullName: "asc" },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      nickname: true,
-      fullName: true,
-      gender: true,
-      isFounder: true,
-      dateOfBirth: true,
-      dateOfDeath: true,
-      bio: true,
-      photoUrl: true,
-      familyId: true,
-      villageId: true,
-      createdAt: true,
-      updatedAt: true,
-      family: {
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-        },
-      },
-      relationshipsAsTo: {
-        where: { type: "PARENT" },
-        select: {
-          type: true,
-          fromMember: {
-            select: {
-              id: true,
-              firstName: true,
-              fullName: true,
-              gender: true,
-            },
-          },
-        },
-      },
-    },
-  });
+  try {
+    return await db.member.findMany({
+      where: { villageId },
+      orderBy: { fullName: "asc" },
+      select: buildMemberSelect(true, true),
+    });
+  } catch (error) {
+    if (!isMissingExternalFieldError(error)) {
+      throw error;
+    }
+
+    return db.member.findMany({
+      where: { villageId },
+      orderBy: { fullName: "asc" },
+      select: buildMemberSelect(true, false),
+    });
+  }
 }
 
 /**
  * Search members by name within a village
  */
 export async function searchMembers(villageId: string, query: string) {
-  return db.member.findMany({
-    where: {
-      villageId,
-      OR: [
-        {
-          firstName: {
-            contains: query,
-            mode: "insensitive",
-          },
-        },
-        {
-          lastName: {
-            contains: query,
-            mode: "insensitive",
-          },
-        },
-        {
-          fullName: {
-            contains: query,
-            mode: "insensitive",
-          },
-        },
-        {
-          nickname: {
-            contains: query,
-            mode: "insensitive",
-          },
-        },
-      ],
-    },
-    orderBy: { fullName: "asc" },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      nickname: true,
-      fullName: true,
-      gender: true,
-      isFounder: true,
-      dateOfBirth: true,
-      dateOfDeath: true,
-      bio: true,
-      photoUrl: true,
-      familyId: true,
-      villageId: true,
-      createdAt: true,
-      updatedAt: true,
-      family: {
-        select: {
-          id: true,
-          name: true,
-          slug: true,
+  const where = {
+    villageId,
+    OR: [
+      {
+        firstName: {
+          contains: query,
+          mode: "insensitive" as const,
         },
       },
-      relationshipsAsTo: {
-        where: { type: "PARENT" },
-        select: {
-          type: true,
-          fromMember: {
-            select: {
-              id: true,
-              firstName: true,
-              fullName: true,
-              gender: true,
-            },
-          },
+      {
+        lastName: {
+          contains: query,
+          mode: "insensitive" as const,
         },
       },
-    },
-    take: 20,
-  });
+      {
+        fullName: {
+          contains: query,
+          mode: "insensitive" as const,
+        },
+      },
+      {
+        nickname: {
+          contains: query,
+          mode: "insensitive" as const,
+        },
+      },
+    ],
+  };
+
+  try {
+    return await db.member.findMany({
+      where,
+      orderBy: { fullName: "asc" },
+      select: buildMemberSelect(true, true),
+      take: 20,
+    });
+  } catch (error) {
+    if (!isMissingExternalFieldError(error)) {
+      throw error;
+    }
+
+    return db.member.findMany({
+      where,
+      orderBy: { fullName: "asc" },
+      select: buildMemberSelect(true, false),
+      take: 20,
+    });
+  }
 }
 
 /**
@@ -466,55 +505,30 @@ export async function getMembersPaginated(options: {
       : {}),
   };
 
-  const [items, total] = await Promise.all([
-    db.member.findMany({
+  let items;
+  try {
+    items = await db.member.findMany({
       where,
       orderBy: { fullName: "asc" },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        nickname: true,
-        fullName: true,
-        gender: true,
-        isFounder: true,
-        dateOfBirth: true,
-        dateOfDeath: true,
-        bio: true,
-        photoUrl: true,
-        familyId: true,
-        villageId: true,
-        createdAt: true,
-        updatedAt: true,
-        ...(options.villageId ? {
-          family: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-            },
-          },
-        } : {}),
-        relationshipsAsTo: {
-          where: { type: "PARENT" },
-          select: {
-            type: true,
-            fromMember: {
-              select: {
-                id: true,
-                firstName: true,
-                fullName: true,
-                gender: true,
-              },
-            },
-          },
-        },
-      },
+      select: buildMemberSelect(Boolean(options.villageId), true),
       skip,
       take: pageSize,
-    }),
-    db.member.count({ where }),
-  ]);
+    });
+  } catch (error) {
+    if (!isMissingExternalFieldError(error)) {
+      throw error;
+    }
+
+    items = await db.member.findMany({
+      where,
+      orderBy: { fullName: "asc" },
+      select: buildMemberSelect(Boolean(options.villageId), false),
+      skip,
+      take: pageSize,
+    });
+  }
+
+  const total = await db.member.count({ where });
 
   return {
     items,
@@ -536,6 +550,9 @@ export async function updateMember(
     nickname: string | null;
     isFounder: boolean;
     gender: GenderValue;
+    isExternal: boolean;
+    externalOriginText: string | null;
+    externalNotes: string | null;
     dateOfBirth: Date;
     dateOfDeath: Date;
     bio: string;

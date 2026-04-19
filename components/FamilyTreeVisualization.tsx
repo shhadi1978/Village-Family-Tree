@@ -39,6 +39,9 @@ type TreeMemberUI = {
   firstName?: string | null;
   lastName?: string | null;
   gender?: string | null;
+  isExternal?: boolean;
+  externalOriginText?: string | null;
+  externalNotes?: string | null;
   dateOfBirth?: string | Date | null;
   dateOfDeath?: string | Date | null;
   photoUrl?: string | null;

@@ -90,6 +90,9 @@ model Member {
   isFounder     Boolean   @default(false)
   fullName      String    // Denormalized for search
   gender        Gender
+  isExternal    Boolean   @default(false)
+  externalOriginText String?
+  externalNotes String?
   dateOfBirth   DateTime?
   dateOfDeath   DateTime?
   bio           String?
