@@ -52,6 +52,10 @@ export default function MemberNode({ data }: MemberNodeProps) {
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const founder = isFamilyFounder(member, familyName);
+  const isExternalMember =
+    Boolean(member.isExternal) ||
+    Boolean(member.externalOriginText) ||
+    Boolean(member.externalNotes);
 
   const memberGender = member.gender ? String(member.gender).toUpperCase() : "OTHER";
   const isMale = memberGender === "MALE";
@@ -154,7 +158,7 @@ export default function MemberNode({ data }: MemberNodeProps) {
           </div>
         )}
 
-        {member.isExternal && (
+        {isExternalMember && (
           <div className="mt-1 text-center space-y-1">
             <span className="inline-block px-2 py-0.5 rounded text-[11px] bg-amber-900/60 border border-amber-600 text-amber-200">
               من خارج القرية

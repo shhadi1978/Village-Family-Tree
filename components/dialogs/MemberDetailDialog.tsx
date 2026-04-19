@@ -25,6 +25,9 @@ interface Member {
     id: string;
     name: string;
   } | null;
+  isExternal?: boolean;
+  externalOriginText?: string | null;
+  externalNotes?: string | null;
 }
 
 interface MemberDetailDialogProps {
@@ -629,6 +632,21 @@ export default function MemberDetailDialog({
             )}
 
             <div className="space-y-2 text-sm text-slate-300 mt-4">
+              {(Boolean((member as any).isExternal) || Boolean((member as any).externalOriginText) || Boolean((member as any).externalNotes)) && (
+                <div className="p-2 rounded bg-amber-900/40 border border-amber-700">
+                  <p className="text-amber-200 font-medium mb-1">من خارج القرية</p>
+                  {(member as any).externalOriginText && (
+                    <p className="text-amber-100/90 text-xs">
+                      <span className="text-amber-300 font-medium">المنشأ:</span> {(member as any).externalOriginText}
+                    </p>
+                  )}
+                  {(member as any).externalNotes && (
+                    <p className="text-amber-100/90 text-xs mt-1">
+                      <span className="text-amber-300 font-medium">ملاحظات:</span> {(member as any).externalNotes}
+                    </p>
+                  )}
+                </div>
+              )}
               {member.dateOfBirth && (
                 <p className="flex justify-between">
                   <span>تاريخ الميلاد:</span>

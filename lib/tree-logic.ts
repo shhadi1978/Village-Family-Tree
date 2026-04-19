@@ -12,6 +12,9 @@ export interface MemberRecord {
   isFounder: boolean;
   fullName: string;
   gender: GenderValue;
+  isExternal?: boolean;
+  externalOriginText?: string | null;
+  externalNotes?: string | null;
   dateOfBirth?: Date | null;
   dateOfDeath?: Date | null;
   bio?: string | null;
@@ -31,6 +34,21 @@ interface RelationshipRecord {
   marriage?: { id: string } | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+function isMissingExternalFieldError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || "");
+  const lower = message.toLowerCase();
+
+  return (
+    (message.includes("isExternal") ||
+      message.includes("externalOriginText") ||
+      message.includes("externalNotes")) &&
+    (lower.includes("does not exist") ||
+      message.includes("P2022") ||
+      lower.includes("unknown argument") ||
+      lower.includes("unknown field"))
+  );
 }
 
 export interface FamilyTreeMarriageGroup {
@@ -246,7 +264,7 @@ export type FocusedTreeOptions = {
 async function fetchMemberWithRelationships(
   memberId: string
 ): Promise<MemberWithRelationships | null> {
-  const baseSelect = {
+  const buildMemberBaseSelect = (includeExternalFields: boolean) => ({
     id: true,
     firstName: true,
     lastName: true,
@@ -254,6 +272,13 @@ async function fetchMemberWithRelationships(
     isFounder: true,
     fullName: true,
     gender: true,
+    ...(includeExternalFields
+      ? {
+          isExternal: true,
+          externalOriginText: true,
+          externalNotes: true,
+        }
+      : {}),
     dateOfBirth: true,
     dateOfDeath: true,
     bio: true,
@@ -262,10 +287,40 @@ async function fetchMemberWithRelationships(
     villageId: true,
     createdAt: true,
     updatedAt: true,
-  };
+  });
 
-  try {
-    const member = await (db.member as any).findUnique({
+  const withExternalDefaults = (member: any): MemberWithRelationships => ({
+    ...member,
+    isExternal: Boolean(member?.isExternal),
+    externalOriginText: member?.externalOriginText ?? null,
+    externalNotes: member?.externalNotes ?? null,
+    relationshipsAsFrom: (member?.relationshipsAsFrom || []).map((rel: any) => ({
+      ...rel,
+      toMember: {
+        ...rel.toMember,
+        isExternal: Boolean(rel.toMember?.isExternal),
+        externalOriginText: rel.toMember?.externalOriginText ?? null,
+        externalNotes: rel.toMember?.externalNotes ?? null,
+      },
+    })),
+    relationshipsAsTo: (member?.relationshipsAsTo || []).map((rel: any) => ({
+      ...rel,
+      fromMember: {
+        ...rel.fromMember,
+        isExternal: Boolean(rel.fromMember?.isExternal),
+        externalOriginText: rel.fromMember?.externalOriginText ?? null,
+        externalNotes: rel.fromMember?.externalNotes ?? null,
+      },
+    })),
+  });
+
+  const queryMember = async (options: {
+    includeExternalFields: boolean;
+    includeMarriage: boolean;
+  }) => {
+    const baseSelect = buildMemberBaseSelect(options.includeExternalFields);
+
+    return (db.member as any).findUnique({
       where: { id: memberId },
       select: {
         ...baseSelect,
@@ -278,11 +333,15 @@ async function fetchMemberWithRelationships(
             villageId: true,
             createdAt: true,
             updatedAt: true,
-            marriage: {
-              select: {
-                id: true,
-              },
-            },
+            ...(options.includeMarriage
+              ? {
+                  marriage: {
+                    select: {
+                      id: true,
+                    },
+                  },
+                }
+              : {}),
             toMember: {
               select: baseSelect,
             },
@@ -297,11 +356,15 @@ async function fetchMemberWithRelationships(
             villageId: true,
             createdAt: true,
             updatedAt: true,
-            marriage: {
-              select: {
-                id: true,
-              },
-            },
+            ...(options.includeMarriage
+              ? {
+                  marriage: {
+                    select: {
+                      id: true,
+                    },
+                  },
+                }
+              : {}),
             fromMember: {
               select: baseSelect,
             },
@@ -309,49 +372,49 @@ async function fetchMemberWithRelationships(
         },
       },
     });
+  };
 
+  try {
+    const member = await queryMember({
+      includeExternalFields: true,
+      includeMarriage: true,
+    });
     return member as MemberWithRelationships | null;
   } catch (error) {
+    if (isMissingExternalFieldError(error)) {
+      const memberWithoutExternal = await queryMember({
+        includeExternalFields: false,
+        includeMarriage: true,
+      });
+      return memberWithoutExternal
+        ? withExternalDefaults(memberWithoutExternal)
+        : null;
+    }
+
     if (!isMarriageSchemaRuntimeError(error)) {
       throw error;
     }
 
-    const legacyMember = await (db.member as any).findUnique({
-      where: { id: memberId },
-      select: {
-        ...baseSelect,
-        relationshipsAsFrom: {
-          select: {
-            id: true,
-            type: true,
-            fromMemberId: true,
-            toMemberId: true,
-            villageId: true,
-            createdAt: true,
-            updatedAt: true,
-            toMember: {
-              select: baseSelect,
-            },
-          },
-        },
-        relationshipsAsTo: {
-          select: {
-            id: true,
-            type: true,
-            fromMemberId: true,
-            toMemberId: true,
-            villageId: true,
-            createdAt: true,
-            updatedAt: true,
-            fromMember: {
-              select: baseSelect,
-            },
-          },
-        },
-      },
-    });
+    try {
+      const legacyMember = await queryMember({
+        includeExternalFields: true,
+        includeMarriage: false,
+      });
+      return legacyMember as MemberWithRelationships | null;
+    } catch (legacyError) {
+      if (!isMissingExternalFieldError(legacyError)) {
+        throw legacyError;
+      }
 
-    return legacyMember as MemberWithRelationships | null;
+      const legacyMemberWithoutExternal = await queryMember({
+        includeExternalFields: false,
+        includeMarriage: false,
+      });
+
+      return legacyMemberWithoutExternal
+        ? withExternalDefaults(legacyMemberWithoutExternal)
+        : null;
+    }
   }
 }
 

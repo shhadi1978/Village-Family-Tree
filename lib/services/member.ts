@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { ensureMarriageUnit } from "@/lib/services/relationship";
+import { RelationshipType } from "@prisma/client";
 
 type GenderValue = "MALE" | "FEMALE" | "OTHER";
 
@@ -64,7 +65,7 @@ function buildMemberSelect(includeFamily: boolean, includeExternalFields: boolea
         }
       : {}),
     relationshipsAsTo: {
-      where: { type: "PARENT" },
+      where: { type: RelationshipType.PARENT },
       select: {
         type: true,
         fromMember: {
