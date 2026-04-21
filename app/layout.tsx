@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import "reactflow/dist/style.css";
 import PWAInstall from "@/components/PWAInstall";
+import ClerkRootProvider from "@/components/ClerkRootProvider";
 
 export const metadata: Metadata = {
   title: "شجرة عائلات القرية",
@@ -28,13 +28,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
-      <html lang="ar" dir="rtl">
-        <body>
+    <html lang="ar" dir="rtl">
+      <body>
+        <ClerkRootProvider>
           {children}
           <PWAInstall />
-        </body>
-      </html>
-    </ClerkProvider>
+        </ClerkRootProvider>
+      </body>
+    </html>
   );
 }

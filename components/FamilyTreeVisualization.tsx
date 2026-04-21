@@ -65,16 +65,53 @@ const MEMBER_NODE_WIDTH = 256;  // Updated from 192 to accommodate w-64
 const MEMBER_NODE_HEIGHT = 215;
 const NEXUS_NODE_WIDTH = 12;
 const NEXUS_NODE_HEIGHT = 12;
-const HORIZONTAL_GAP = 320;  // Increased for better spacing with larger nodes
-const VERTICAL_GAP = 220;
+const HORIZONTAL_GAP = 340;
+const VERTICAL_GAP = 230;
 const MARRIAGE_CHILD_ANCHOR_Y_OFFSET = 62;
 const CHILD_JUNCTION_Y_OFFSET = 94;
 const CHILD_CLUSTER_GAP_DESKTOP = 240;
 const CHILD_CLUSTER_GAP_MOBILE = 168;
+const DENSE_TREE_NODE_THRESHOLD = 50;  // Lowered from 90 for earlier dense-mode activation
+
+function countTreeNodes(root: TreeNodeUI | null): number {
+  if (!root) {
+    return 0;
+  }
+
+  const visited = new Set<string>();
+  const queue: TreeNodeUI[] = [root];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) {
+      continue;
+    }
+
+    const id = current.member.id;
+    if (visited.has(id)) {
+      continue;
+    }
+
+    visited.add(id);
+    queue.push(...current.parents);
+    queue.push(...current.siblings);
+    queue.push(...current.children);
+    queue.push(...current.spouses);
+    queue.push(...current.marriages.flatMap((marriage) => marriage.children));
+
+    current.marriages.forEach((marriage) => {
+      if (marriage.spouse) {
+        queue.push(marriage.spouse);
+      }
+    });
+  }
+
+  return visited.size;
+}
 
 /**
  * Apply Dagre hierarchical layout to all nodes and edges.
- * Adapts layout direction and spacing based on screen size.
+ * Adapts layout direction and spacing based on screen size and simplified mode.
  */
 function applyDagreLayout(
   nodes: Node[],
@@ -83,18 +120,22 @@ function applyDagreLayout(
     isMobile: boolean;
     isPortrait: boolean;
     isNarrowMobile: boolean;
+    forceDescendantsOnly?: boolean;
   }
 ): Node[] {
   if (nodes.length === 0) return nodes;
 
-  const { isMobile, isPortrait, isNarrowMobile } = options;
+  const { isMobile, isPortrait, isNarrowMobile, forceDescendantsOnly } = options;
+  const isSimplifiedMode = forceDescendantsOnly && !isMobile;
 
   const graph = new dagre.graphlib.Graph({ multigraph: true });
   graph.setDefaultEdgeLabel(() => ({}));
   graph.setGraph({
     rankdir: "TB",
-    nodesep: isMobile ? (isNarrowMobile ? 80 : isPortrait ? 94 : 110) : 130,
-    ranksep: 150,
+    nodesep: isMobile 
+      ? (isNarrowMobile ? 110 : isPortrait ? 130 : 150) 
+      : (isSimplifiedMode ? 200 : 180),
+    ranksep: isSimplifiedMode ? 260 : 220,
     marginx: 60,
     marginy: 70,
   });
@@ -287,8 +328,9 @@ function applyManualLayoutPolish(
   }));
 
   // 1) Compact member rows while preserving each row center.
-  const rowBucketSize = isMobile ? 34 : 40;
-  const minGap = isMobile ? (isNarrowMobile ? 136 : 154) : 214;
+  const rowBucketSize = isMobile ? 120 : 140;
+  const minGap = isMobile ? (isNarrowMobile ? 150 : 170) : HORIZONTAL_GAP;
+  const fixedRowGap = isMobile ? (isNarrowMobile ? 170 : 190) : VERTICAL_GAP;
   const rows = new Map<number, Node[]>();
 
   polished.forEach((node) => {
@@ -325,6 +367,20 @@ function applyManualLayoutPolish(
     const centerShift = originalCenter - packedCenter;
     rowNodes.forEach((node) => {
       node.position.x += centerShift;
+    });
+  });
+
+  // 1.5) Snap rows to fixed vertical levels so generations remain consistently spaced.
+  const sortedRowKeys = Array.from(rows.keys()).sort((a, b) => a - b);
+  const firstRowY = sortedRowKeys.length
+    ? Math.min(...(rows.get(sortedRowKeys[0]) || []).map((n) => n.position.y))
+    : 0;
+
+  sortedRowKeys.forEach((rowKey, index) => {
+    const rowNodes = rows.get(rowKey) || [];
+    const targetY = firstRowY + index * fixedRowGap;
+    rowNodes.forEach((rowNode) => {
+      rowNode.position.y = targetY;
     });
   });
 
@@ -454,72 +510,17 @@ function countBranchUnits(node: TreeNodeUI, collapsedMemberIds: Set<string>): nu
   }, 0);
 }
 
-function getHorizontalGap(node: TreeNodeUI) {
-  const marriageCount = node.marriages.length;
-  const maxMarriageChildren = node.marriages.reduce(
-    (max, marriage) => Math.max(max, marriage.children.length),
-    0
-  );
-  const directChildrenCount = node.children.length;
-  const densityBoost = Math.max(maxMarriageChildren, directChildrenCount);
-
-  return (
-    HORIZONTAL_GAP +
-    Math.max(0, marriageCount - 1) * 120 +
-    Math.max(0, densityBoost - 2) * 30
-  );
+function getHorizontalGap(_node: TreeNodeUI) {
+  // Keep spacing fixed so sibling blocks remain predictable and easier to scan.
+  return HORIZONTAL_GAP;
 }
 
 function getChildSourceHandle(childIndex: number, totalChildren: number) {
-  if (totalChildren <= 1) {
-    return "source-bottom";
-  }
-
-  const ratio = childIndex / (totalChildren - 1);
-
-  if (ratio < 0.2) {
-    return "source-bottom-far-left";
-  }
-
-  if (ratio < 0.4) {
-    return "source-bottom-left";
-  }
-
-  if (ratio < 0.6) {
-    return "source-bottom-center";
-  }
-
-  if (ratio < 0.8) {
-    return "source-bottom-right";
-  }
-
-  return "source-bottom-far-right";
+  return totalChildren <= 1 ? "source-bottom" : "source-bottom-center";
 }
 
 function getChildTargetHandle(childIndex: number, totalChildren: number) {
-  if (totalChildren <= 1) {
-    return "target-top";
-  }
-
-  const ratio = childIndex / (totalChildren - 1);
-
-  if (ratio < 0.2) {
-    return "target-top-far-left";
-  }
-
-  if (ratio < 0.4) {
-    return "target-top-left";
-  }
-
-  if (ratio < 0.6) {
-    return "target-top-center";
-  }
-
-  if (ratio < 0.8) {
-    return "target-top-right";
-  }
-
-  return "target-top-far-right";
+  return totalChildren <= 1 ? "target-top" : "target-top-center";
 }
 
 function getChildEdgeOverrides(childIndex: number, totalChildren: number): Partial<Edge> {
@@ -527,8 +528,8 @@ function getChildEdgeOverrides(childIndex: number, totalChildren: number): Parti
     return {
       type: "smoothstep",
       pathOptions: {
-        offset: 22,
-        borderRadius: 16,
+        offset: 20,
+        borderRadius: 14,
       },
     };
   }
@@ -539,19 +540,18 @@ function getChildEdgeOverrides(childIndex: number, totalChildren: number): Parti
   return {
     type: "smoothstep",
     pathOptions: {
-      // Increase offset for outer children so lines fan out and overlap less.
-      offset: 22 + distanceFromMiddle * 14,
-      borderRadius: 16 + distanceFromMiddle * 6,
+      offset: 20 + distanceFromMiddle * 8,
+      borderRadius: 14 + distanceFromMiddle * 4,
     },
     style: {
       strokeWidth: 2,
-      opacity: 0.95,
+      opacity: 0.92,
     },
   };
 }
 
 function getChildClusterGap(isMobile: boolean) {
-  return isMobile ? CHILD_CLUSTER_GAP_MOBILE : CHILD_CLUSTER_GAP_DESKTOP;
+  return isMobile ? CHILD_CLUSTER_GAP_MOBILE : HORIZONTAL_GAP;
 }
 
 function buildEdge(
@@ -579,11 +579,18 @@ function buildEdge(
           ? "#f59e0b"
           : undefined;
 
+  const defaultEdgeTypeByRelation: Record<"parent" | "child" | "sibling" | "spouse", Edge["type"]> = {
+    parent: "smoothstep",
+    child: "smoothstep",
+    sibling: "smoothstep",
+    spouse: "straight",
+  };
+
   return {
     id,
     source,
     target,
-    type: overrides?.type || "smoothstep",
+    type: overrides?.type || defaultEdgeTypeByRelation[relation],
     animated: false,
     sourceHandle,
     targetHandle,
@@ -611,12 +618,13 @@ function convertTreeToGraph(
   onToggleCollapse?: (memberId: string) => void,
   isMobile = false,
   isCompactMobile = false,
-  showExtendedMobile = false
+  showExtendedMobile = false,
+  forceDescendantsOnly = false
 ) {
   const nodeMap = new Map<string, Node>();
   const edgeMap = new Map<string, Edge>();
   const processedMembers = new Set<string>();
-  const focusDescendantsOnly = isMobile && !showExtendedMobile;
+  const focusDescendantsOnly = (isMobile && !showExtendedMobile) || forceDescendantsOnly;
 
   function ensureNode(treeNode: TreeNodeUI, x = 0, y = 0) {
     const memberId = treeNode.member.id;
@@ -679,7 +687,7 @@ function convertTreeToGraph(
     });
   }
 
-  function placeSpouses(treeNode: TreeNodeUI, memberX: number, memberY: number) {
+  function placeSpouses(treeNode: TreeNodeUI, memberX: number, memberY: number, hideSpouseEdges = false) {
     const sortedMarriages = getSortedMarriageGroups(treeNode);
     const localHorizontalGap = getHorizontalGap(treeNode);
 
@@ -698,40 +706,43 @@ function convertTreeToGraph(
 
       ensureNexusNode(nexusNodeId, nexusX, nexusY);
 
-      // Y-connection arm 1: husband -> nexus
-      ensureEdge(
-        buildEdge(
-          `${treeNode.member.id}__to__nexus__${nexusNodeId}`,
-          treeNode.member.id,
-          nexusNodeId,
-          "spouse",
-          "source-right",
-          "target-left",
-          {
-            type: "smoothstep",
-            zIndex: 5,
-            style: { strokeWidth: 2.4, strokeDasharray: "9 4" },
-          }
-        )
-      );
-
-      if (spouse) {
-        // Y-connection arm 2: wife -> nexus
+      // In simplified mode, skip drawing spouse connection lines to reduce visual clutter
+      if (!hideSpouseEdges) {
+        // Y-connection arm 1: husband -> nexus
         ensureEdge(
           buildEdge(
-            `${spouse.member.id}__to__nexus__${nexusNodeId}`,
-            spouse.member.id,
+            `${treeNode.member.id}__to__nexus__${nexusNodeId}`,
+            treeNode.member.id,
             nexusNodeId,
             "spouse",
-            "source-left",
-            "target-right",
+            "source-right",
+            "target-left",
             {
-              type: "smoothstep",
+              type: "straight",
               zIndex: 5,
               style: { strokeWidth: 2.4, strokeDasharray: "9 4" },
             }
           )
         );
+
+        if (spouse) {
+          // Y-connection arm 2: wife -> nexus
+          ensureEdge(
+            buildEdge(
+              `${spouse.member.id}__to__nexus__${nexusNodeId}`,
+              spouse.member.id,
+              nexusNodeId,
+              "spouse",
+              "source-left",
+              "target-right",
+              {
+                type: "straight",
+                zIndex: 5,
+                style: { strokeWidth: 2.4, strokeDasharray: "9 4" },
+              }
+            )
+          );
+        }
       }
 
       return {
@@ -804,7 +815,7 @@ function convertTreeToGraph(
 
     processedMembers.add(memberId);
     ensureNode(treeNode, centerX, levelY);
-    const spouseLayout = placeSpouses(treeNode, centerX, levelY);
+    const spouseLayout = placeSpouses(treeNode, centerX, levelY, focusDescendantsOnly);
     const childSections = getChildSections(treeNode, centerX, spouseLayout);
 
     if (childSections.length === 0 || collapsedMemberIds.has(memberId)) {
@@ -863,7 +874,7 @@ function convertTreeToGraph(
     const localHorizontalGap = getHorizontalGap(treeNode);
     ensureNode(treeNode, rootX, rootY);
     processedMembers.add(treeNode.member.id);
-    const spouseLayout = placeSpouses(treeNode, rootX, rootY);
+    const spouseLayout = placeSpouses(treeNode, rootX, rootY, focusDescendantsOnly);
     const childSections = getChildSections(treeNode, rootX, spouseLayout);
 
     let siblingsCount = 0;
@@ -903,16 +914,7 @@ function convertTreeToGraph(
 
         const siblingX = rootX + (slot - Math.floor(siblingSlots / 2)) * localHorizontalGap;
         ensureNode(sibling, siblingX, siblingsY);
-        ensureEdge(
-          buildEdge(
-            `${treeNode.member.id}-${sibling.member.id}-sibling`,
-            treeNode.member.id,
-            sibling.member.id,
-            "sibling",
-            siblingX > rootX ? "source-right" : "source-left",
-            siblingX > rootX ? "target-left" : "target-right"
-          )
-        );
+        // Keep sibling nodes visible without connector lines to reduce clutter.
         siblingIndex += 1;
       }
     }
@@ -988,7 +990,10 @@ function FamilyTreeFlowCanvas({
   const [isPortrait, setIsPortrait] = useState(false);
   const [isNarrowMobile, setIsNarrowMobile] = useState(false);
   const [showExtendedMobile, setShowExtendedMobile] = useState(false);
+  const [showDesktopSimplified, setShowDesktopSimplified] = useState(false);
   const { fitView, zoomIn, zoomOut } = useReactFlow();
+  const denseTreeNodeCount = countTreeNodes(treeData);
+  const isDenseTree = denseTreeNodeCount >= DENSE_TREE_NODE_THRESHOLD;
 
   // Monitor viewport + orientation with matchMedia for reliable mobile rotation updates
   useEffect(() => {
@@ -1039,6 +1044,18 @@ function FamilyTreeFlowCanvas({
     setShowExtendedMobile((previous) => !previous);
   };
 
+  const handleToggleDesktopSimplified = () => {
+    setShowDesktopSimplified((previous) => !previous);
+  };
+
+  useEffect(() => {
+    if (isMobile) {
+      return;
+    }
+
+    setShowDesktopSimplified(isDenseTree);
+  }, [isMobile, isDenseTree, treeData?.member.id]);
+
   useEffect(() => {
     if (treeData && !loading) {
       const { nodes: rawNodes, edges: rawEdges } = convertTreeToGraph(
@@ -1049,7 +1066,8 @@ function FamilyTreeFlowCanvas({
         handleToggleCollapse,
         isMobile,
         isNarrowMobile,
-        showExtendedMobile
+        showExtendedMobile,
+        !isMobile && showDesktopSimplified
       );
 
       // Use dagre for stable non-overlapping placement.
@@ -1057,6 +1075,7 @@ function FamilyTreeFlowCanvas({
         isMobile,
         isPortrait,
         isNarrowMobile,
+        forceDescendantsOnly: !isMobile && showDesktopSimplified,
       });
 
       setNodes(newNodes);
@@ -1074,6 +1093,7 @@ function FamilyTreeFlowCanvas({
     isPortrait,
     isNarrowMobile,
     showExtendedMobile,
+    showDesktopSimplified,
     setNodes,
     setEdges,
     fitView,
@@ -1193,6 +1213,21 @@ function FamilyTreeFlowCanvas({
                 title={showExtendedMobile ? "العرض الكامل مفعل" : "العرض المبسط مفعل"}
               >
                 {showExtendedMobile ? "عرض كامل" : "عرض مبسط"}
+              </button>
+            )}
+            {!isMobile && (
+              <button
+                onClick={handleToggleDesktopSimplified}
+                className={`px-3 h-9 flex items-center justify-center rounded-full text-xs font-semibold transition ${
+                  showDesktopSimplified
+                    ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+                    : "bg-slate-700 hover:bg-slate-600 text-white"
+                }`}
+                title={showDesktopSimplified ? "العرض المبسط مفعل للشجرة الكبيرة" : "تفعيل العرض المبسط للشجرة الكبيرة"}
+              >
+                {showDesktopSimplified
+                  ? `عرض مبسط (${denseTreeNodeCount})`
+                  : `عرض كامل (${denseTreeNodeCount})`}
               </button>
             )}
           </div>
