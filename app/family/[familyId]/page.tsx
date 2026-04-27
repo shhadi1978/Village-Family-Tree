@@ -14,10 +14,19 @@ import Link from "next/link";
 type MemberSortMode = "SEQUENCE" | "ALPHABETICAL" | "LINEAGE";
 type TreeViewMode = "FULL_FAMILY" | "PERSON_DESCENDANTS";
 
-// Dynamically import ReactFlow component (requires next/dynamic for SSR)
 const FamilyTreeVisualization = dynamic(
   () => import("@/components/FamilyTreeVisualization"),
-  { ssr: false }
+  {
+    ssr: false,
+    loading: () => (
+      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a' }}>
+        <div style={{ textAlign: 'center', color: '#94a3b8' }}>
+          <div style={{ width: 48, height: 48, border: '4px solid #334155', borderTop: '4px solid #3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
+          <p>جاري تحميل الشجرة...</p>
+        </div>
+      </div>
+    )
+  }
 );
 
 export default function FamilyTreePage() {
@@ -42,6 +51,7 @@ function FamilyTreePageContent() {
   const searchParams = useSearchParams();
   const familyId = params.familyId as string;
   const startMemberId = searchParams.get("member");
+  const preferredFocusMemberId = "cmnhfo1xp006nfja84xhptcxo";
 
   const { getFamily } = useFamilies();
   const { getMembers } = useMembers();
@@ -61,19 +71,17 @@ function FamilyTreePageContent() {
   const [treeReloadTick, setTreeReloadTick] = useState(0);
   const treeCacheRef = useRef<Record<string, any>>({});
   const lastHandledReloadTickRef = useRef(0);
+
   const sortedMembers = useMemo(() => {
     const list = Array.isArray(members) ? [...members] : [];
-
     if (memberSortMode === "LINEAGE") {
       return sortMembersByLineage(list, family?.name);
     }
-
     if (memberSortMode === "ALPHABETICAL") {
       return list.sort((a, b) =>
         getMemberDisplayName(a).localeCompare(getMemberDisplayName(b), "ar")
       );
     }
-
     return list.sort((a, b) => {
       const timeA = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
       const timeB = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -94,10 +102,7 @@ function FamilyTreePageContent() {
   }, [sortedMembers, searchQuery]);
 
   const fullTreeRootMemberId = useMemo(() => {
-    if (!Array.isArray(members) || members.length === 0) {
-      return null;
-    }
-
+    if (!Array.isArray(members) || members.length === 0) return null;
     const founder = members.find((member) => isFamilyFounder(member, family?.name));
     return (founder || members[0])?.id || null;
   }, [members, family?.name]);
@@ -112,47 +117,53 @@ function FamilyTreePageContent() {
     }
   }, [startMemberId]);
 
-  // Load family and members
+  useEffect(() => {
+    if (startMemberId) {
+      return;
+    }
+
+    if (!Array.isArray(members) || members.length === 0) {
+      return;
+    }
+
+    const hasPreferredMember = members.some((member) => member.id === preferredFocusMemberId);
+    if (!hasPreferredMember) {
+      return;
+    }
+
+    setSelectedMemberId(preferredFocusMemberId);
+    setTreeViewMode("PERSON_DESCENDANTS");
+  }, [members, startMemberId]);
+
   useEffect(() => {
     const loadFamily = async () => {
       try {
         setLoading(true);
         const familyData = await getFamily(familyId);
         setFamily(familyData);
-
         const membersData = await getMembers(familyId);
         const membersPayload = membersData as { members?: any[] } | any[];
         const memberArray = Array.isArray(membersPayload)
           ? membersPayload
           : membersPayload?.members || [];
         setMembers(memberArray as any[]);
-
       } catch (err) {
         console.error("Error loading family:", err);
-        setError(
-          err instanceof Error ? err.message : "تعذر تحميل بيانات العائلة"
-        );
+        setError(err instanceof Error ? err.message : "تعذر تحميل بيانات العائلة");
       } finally {
         setLoading(false);
       }
     };
-
     loadFamily();
   }, [familyId, getFamily, getMembers]);
 
-  // Load tree data when member is selected
   useEffect(() => {
     const loadTree = async () => {
       if (!activeTreeMemberId) {
         setTreeData(null);
         return;
       }
-
-      const cacheKey = [
-        activeTreeMemberId,
-        treeViewMode,
-      ].join(":");
-
+      const cacheKey = [activeTreeMemberId, treeViewMode].join(":");
       const isManualRefresh = treeReloadTick !== lastHandledReloadTickRef.current;
       if (!isManualRefresh) {
         const cachedTree = treeCacheRef.current[cacheKey];
@@ -161,19 +172,12 @@ function FamilyTreePageContent() {
           return;
         }
       }
-
       try {
         setTreeLoading(true);
         const response = await fetch(
-          `/api/tree/${activeTreeMemberId}?depth=10&view=${
-            treeViewMode === "FULL_FAMILY" ? "full" : "descendants"
-          }`
+          `/api/tree/${activeTreeMemberId}?depth=10&view=${treeViewMode === "FULL_FAMILY" ? "full" : "descendants"}`
         );
-
-        if (!response.ok) {
-          throw new Error("تعذر تحميل بيانات شجرة العائلة");
-        }
-
+        if (!response.ok) throw new Error("تعذر تحميل بيانات شجرة العائلة");
         const result = await response.json();
         setTreeData(result.data);
         treeCacheRef.current[cacheKey] = result.data;
@@ -186,7 +190,6 @@ function FamilyTreePageContent() {
         setTreeLoading(false);
       }
     };
-
     loadTree();
   }, [activeTreeMemberId, treeViewMode, treeReloadTick]);
 
@@ -207,10 +210,7 @@ function FamilyTreePageContent() {
         <div className="bg-red-900 border border-red-700 rounded-lg p-8 text-red-200 max-w-md">
           <h2 className="text-2xl font-bold mb-2">خطأ</h2>
           <p>{error || "العائلة غير موجودة"}</p>
-          <Link
-            href="/"
-            className="inline-block mt-4 text-blue-400 hover:text-blue-300"
-          >
+          <Link href="/" className="inline-block mt-4 text-blue-400 hover:text-blue-300">
             العودة للرئيسية
           </Link>
         </div>
@@ -219,9 +219,9 @@ function FamilyTreePageContent() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col">
+    <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} className="bg-slate-900">
       {/* Header */}
-      <header className="bg-slate-800 border-b border-slate-700 px-4 md:px-6 py-4">
+      <header className="bg-slate-800 border-b border-slate-700 px-4 md:px-6 py-4" style={{ flexShrink: 0 }}>
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
           <div className="flex items-center gap-4">
             <Link href="/" className="text-blue-400 hover:text-blue-300">
@@ -234,20 +234,19 @@ function FamilyTreePageContent() {
               </p>
             </div>
           </div>
-
-          <Link
-            href="/"
-            className="flex items-center gap-2 text-slate-400 hover:text-white transition"
-          >
+          <Link href="/" className="flex items-center gap-2 text-slate-400 hover:text-white transition">
             <Home className="w-5 h-5" />
             <span>الرئيسية</span>
           </Link>
         </div>
       </header>
 
-      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        {/* Sidebar - Member Selection */}
-        <aside className="w-full lg:w-72 bg-slate-800 lg:border-l border-slate-700 overflow-y-auto max-h-56 lg:max-h-none">
+      <div className="flex flex-col lg:flex-row" style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        {/* Sidebar */}
+        <aside
+          className="w-full h-[40dvh] lg:h-auto lg:w-72 bg-slate-800 lg:border-l border-slate-700 overflow-y-auto"
+          style={{ flexShrink: 0, maxHeight: '100%' }}
+        >
           <div className="p-4 border-b border-slate-700">
             <h2 className="font-semibold text-white mb-3">اختر فرداً</h2>
             <div className="mb-3">
@@ -277,10 +276,7 @@ function FamilyTreePageContent() {
             <div className="mt-3">
               <button
                 type="button"
-                onClick={() => {
-                  setTreeViewMode("FULL_FAMILY");
-                  setSelectedMemberId(null);
-                }}
+                onClick={() => { setTreeViewMode("FULL_FAMILY"); setSelectedMemberId(null); }}
                 className={`w-full px-3 py-2 rounded-lg border text-sm transition ${
                   treeViewMode === "FULL_FAMILY"
                     ? "bg-emerald-600/20 border-emerald-500 text-emerald-100"
@@ -307,10 +303,7 @@ function FamilyTreePageContent() {
                 return (
                   <button
                     key={member.id}
-                    onClick={() => {
-                      setSelectedMemberId(member.id);
-                      setTreeViewMode("PERSON_DESCENDANTS");
-                    }}
+                    onClick={() => { setSelectedMemberId(member.id); setTreeViewMode("PERSON_DESCENDANTS"); }}
                     className={`w-full text-left px-4 py-3 rounded transition text-sm border ${
                       treeViewMode === "PERSON_DESCENDANTS" && selectedMemberId === member.id
                         ? "bg-blue-600 text-white border-blue-500"
@@ -320,9 +313,7 @@ function FamilyTreePageContent() {
                     }`}
                   >
                     <div className="font-medium">{getMemberDisplayName(member)}</div>
-                    {founder && (
-                      <div className="text-[11px] text-amber-300 mt-0.5">مؤسس العائلة</div>
-                    )}
+                    {founder && <div className="text-[11px] text-amber-300 mt-0.5">مؤسس العائلة</div>}
                     {member.gender && (
                       <div className="text-xs opacity-70">
                         {genderLabelAr(member.gender)}
@@ -340,10 +331,10 @@ function FamilyTreePageContent() {
           </div>
         </aside>
 
-        {/* Main Content - Tree Visualization */}
-        <main className="flex-1">
+        {/* Main - Tree */}
+        <main style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
           {treeLoading ? (
-            <div className="w-full h-full flex items-center justify-center">
+            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <div className="text-slate-400 text-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
                 <p>جاري تحميل الشجرة...</p>
@@ -354,13 +345,12 @@ function FamilyTreePageContent() {
               treeData={treeData}
               familyName={family?.name}
               loading={false}
+              focusDescendantsOnly={treeViewMode === "PERSON_DESCENDANTS"}
               onRefresh={() => setTreeReloadTick(prev => prev + 1)}
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <div className="text-slate-400 text-center">
-                <p>لا تتوفر بيانات شجرة حالياً</p>
-              </div>
+            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <p className="text-slate-400">لا تتوفر بيانات شجرة حالياً</p>
             </div>
           )}
         </main>

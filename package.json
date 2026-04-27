@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:stable": "node -e \"try{const fs=require('fs');fs.rmSync('.next-dev',{recursive:true,force:true});fs.rmSync('.next',{recursive:true,force:true})}catch(e){}\" && next dev --port 3002",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
@@ -13,16 +14,18 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^5.7.5",
+    "@dagrejs/dagre": "^3.0.0",
     "@prisma/adapter-pg": "^7.6.0",
     "@prisma/client": "^6.19.2",
+    "@xyflow/react": "^12.10.2",
     "dagre": "^0.8.5",
     "lucide-react": "^0.469.0",
-    "next": "14.2.30",
+    "next": "^14.2.35",
     "pg": "^8.20.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "reactflow": "^11.11.4",
-    "uploadthing": "^7.7.4",
+    "uploadthing": "^6.12.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {

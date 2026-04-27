@@ -1,9 +1,19 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Isolate development artifacts from production builds.
+  // This prevents recurring MODULE_NOT_FOUND/404 chunk errors when running build + dev on Windows.
+  distDir: process.env.NODE_ENV === "development" ? ".next-dev" : ".next",
   experimental: {
     serverActions: {
       allowedOrigins: ["localhost:3000"],
     },
+  },
+  webpack: (config, { dev }) => {
+    // Stabilize dev mode on Windows: avoid corrupted filesystem cache chunks.
+    if (dev) {
+      config.cache = false;
+    }
+    return config;
   },
   async headers() {
     return [

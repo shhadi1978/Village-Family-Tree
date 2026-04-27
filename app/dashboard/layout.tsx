@@ -40,7 +40,10 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       : "grid-cols-2";
 
   return (
-    <div className="min-h-screen bg-slate-900">
+    <div
+      className="bg-slate-900"
+      style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}
+    >
       <header className="md:hidden bg-slate-800 border-b border-slate-700 px-4 py-3 sticky top-0 z-40">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-white">لوحة التحكم</h2>
@@ -151,7 +154,10 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         </div>
       </aside>
 
-      <div className="md:mr-64">
+      <div
+        className="md:mr-64"
+        style={{ flex: 1, display: "flex", flexDirection: "column" }}
+      >
         <header className="hidden md:block bg-slate-800 border-b border-slate-700 px-8 py-4">
           <div className="flex items-center justify-between gap-4">
             <div className="space-y-2">
@@ -164,7 +170,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           </div>
         </header>
 
-        <main className="p-4 md:p-8">{children}</main>
+        <main
+          className="p-4 md:p-8"
+          style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

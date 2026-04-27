@@ -1,36 +1,32 @@
-"use client";
+﻿'use client';
 
-import { useCallback, useEffect, useState } from "react";
-import ReactFlow, {
-  Node,
-  Edge,
-  Controls,
+import { useCallback, useEffect, useState } from 'react';
+import {
   Background,
-  ReactFlowProvider,
-  useNodesState,
-  useEdgesState,
+  Controls,
   MiniMap,
-  useReactFlow,
+  ReactFlow,
+  ReactFlowProvider,
+  useEdgesState,
+  useNodesState,
   MarkerType,
   Panel,
   Position,
-} from "reactflow";
-import dagre from "dagre";
-import "reactflow/dist/style.css";
-import MemberNode from "./nodes/MemberNode";
-import NexusNode from "./nodes/NexusNode";
+  type Edge,
+  type Node,
+  type NodeTypes,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import dagre from 'dagre';
+import MemberNode from './nodes/MemberNode';
+import NexusNode from './nodes/NexusNode';
+import MarriageNode from './nodes/MarriageNode';
 
-const nodeTypes = {
-  member: MemberNode,
-  nexus: NexusNode,
+const nodeTypes: NodeTypes = {
+  member: MemberNode as NodeTypes[string],
+  nexus: NexusNode as NodeTypes[string],
+  union: MarriageNode as NodeTypes[string],
 };
-
-interface FamilyTreeVisualizationProps {
-  treeData: TreeNodeUI | null;
-  loading?: boolean;
-  familyName?: string;
-  onRefresh?: () => void;
-}
 
 type TreeMemberUI = {
   id: string;
@@ -60,18 +56,26 @@ type TreeNodeUI = {
   }>;
 };
 
-// ─── Layout constants ──────────────────────────────────────────────────
-const MEMBER_NODE_WIDTH = 256;  // Updated from 192 to accommodate w-64
-const MEMBER_NODE_HEIGHT = 215;
-const NEXUS_NODE_WIDTH = 12;
-const NEXUS_NODE_HEIGHT = 12;
-const HORIZONTAL_GAP = 340;
-const VERTICAL_GAP = 230;
-const MARRIAGE_CHILD_ANCHOR_Y_OFFSET = 62;
-const CHILD_JUNCTION_Y_OFFSET = 94;
-const CHILD_CLUSTER_GAP_DESKTOP = 240;
-const CHILD_CLUSTER_GAP_MOBILE = 168;
-const DENSE_TREE_NODE_THRESHOLD = 50;  // Lowered from 90 for earlier dense-mode activation
+type FamilyTreeVisualizationProps = {
+  treeData: TreeNodeUI | null;
+  loading?: boolean;
+  familyName?: string;
+  onRefresh?: () => void;
+  focusDescendantsOnly?: boolean;
+};
+
+const MEMBER_NODE_WIDTH = 256;
+const MEMBER_NODE_HEIGHT = 272;
+const MOBILE_MEMBER_NODE_WIDTH = 176;
+const MOBILE_MEMBER_NODE_HEIGHT = 236;
+const COMPACT_MOBILE_MEMBER_NODE_WIDTH = 144;
+const COMPACT_MOBILE_MEMBER_NODE_HEIGHT = 214;
+const DENSE_TREE_NODE_THRESHOLD = 50;
+
+const LAYOUT_MEMBER_NODE_WIDTH = 200;
+const LAYOUT_MEMBER_NODE_HEIGHT = 80;
+const LAYOUT_UNION_NODE_WIDTH = 16;
+const LAYOUT_UNION_NODE_HEIGHT = 16;
 
 function countTreeNodes(root: TreeNodeUI | null): number {
   if (!root) {
@@ -109,924 +113,955 @@ function countTreeNodes(root: TreeNodeUI | null): number {
   return visited.size;
 }
 
-/**
- * Apply Dagre hierarchical layout to all nodes and edges.
- * Adapts layout direction and spacing based on screen size and simplified mode.
- */
-function applyDagreLayout(
-  nodes: Node[],
-  edges: Edge[],
-  options: {
-    isMobile: boolean;
-    isPortrait: boolean;
-    isNarrowMobile: boolean;
-    forceDescendantsOnly?: boolean;
-  }
-): Node[] {
-  if (nodes.length === 0) return nodes;
+type RawRelationship = {
+  childId: string;
+  parentIds: string[];
+};
 
-  const { isMobile, isPortrait, isNarrowMobile, forceDescendantsOnly } = options;
-  const isSimplifiedMode = forceDescendantsOnly && !isMobile;
+type SpouseLink = {
+  leftId: string;
+  rightId: string;
+};
 
-  const graph = new dagre.graphlib.Graph({ multigraph: true });
-  graph.setDefaultEdgeLabel(() => ({}));
-  graph.setGraph({
-    rankdir: "TB",
-    nodesep: isMobile 
-      ? (isNarrowMobile ? 110 : isPortrait ? 130 : 150) 
-      : (isSimplifiedMode ? 200 : 180),
-    ranksep: isSimplifiedMode ? 260 : 220,
-    marginx: 60,
-    marginy: 70,
-  });
+type TransformOptions = {
+  familyName?: string;
+  onRefresh?: () => void;
+  isMobile?: boolean;
+  isCompactMobile?: boolean;
+  collapsedMemberIds?: Set<string>;
+  onToggleCollapse?: (memberId: string) => void;
+  spouses?: Set<string>;
+  spouseLinks?: SpouseLink[];
+};
 
-  const getNodeSize = (nodeType?: string) => {
-    if (nodeType === "nexus") {
-      return { width: NEXUS_NODE_WIDTH, height: NEXUS_NODE_HEIGHT };
-    }
-
-    if (isMobile) {
-      return isNarrowMobile
-        ? { width: 152, height: 154 }
-        : { width: 176, height: 170 };
-    }
-
-    return { width: MEMBER_NODE_WIDTH, height: MEMBER_NODE_HEIGHT };
+type FlowEdge = Edge & {
+  pathOptions?: {
+    borderRadius?: number;
+    offset?: number;
   };
+  /** Dagre layout weight carried from the transformer */
+  weight?: number;
+};
 
-  for (const node of nodes) {
-    const { width, height } = getNodeSize(node.type);
-    graph.setNode(node.id, { width, height });
+function createMarkerArrow(color: string): Edge['markerEnd'] {
+  return {
+    type: MarkerType.ArrowClosed,
+    color,
+  };
+}
+
+function isUnionNodeId(nodeId: string): boolean {
+  return nodeId.startsWith('union-');
+}
+
+function getNodeRenderSize(node: Node): { width: number; height: number } {
+  const style = (node.style ?? {}) as { width?: number | string; height?: number | string; minHeight?: number | string };
+
+  const widthFromStyle = typeof style.width === 'number' ? style.width : Number(style.width);
+  const heightFromStyle = typeof style.height === 'number' ? style.height : Number(style.height);
+  const minHeightFromStyle = typeof style.minHeight === 'number' ? style.minHeight : Number(style.minHeight);
+
+  const width = Number.isFinite(widthFromStyle) ? widthFromStyle : MEMBER_NODE_WIDTH;
+  const height = Number.isFinite(heightFromStyle)
+    ? heightFromStyle
+    : Number.isFinite(minHeightFromStyle)
+      ? minHeightFromStyle
+      : MEMBER_NODE_HEIGHT;
+
+  return { width, height };
+}
+
+function getNodeLayoutSize(node: Node): { width: number; height: number } {
+  if (isUnionNodeId(node.id)) {
+    return { width: LAYOUT_UNION_NODE_WIDTH, height: LAYOUT_UNION_NODE_HEIGHT };
   }
 
-  for (const edge of edges) {
-    const isNexusSpouseEdge = edge.id.includes("__to__nexus__");
-    const isChildEdge = edge.id.includes("-child");
-    const isSiblingEdge = edge.id.includes("-sibling");
+  return { width: LAYOUT_MEMBER_NODE_WIDTH, height: LAYOUT_MEMBER_NODE_HEIGHT };
+}
 
-    let weight = 1;
-    let minlen = 1;
-
-    if (isNexusSpouseEdge) {
-      // Keep nexus on same rank as spouses.
-      weight = 3;
-      minlen = 0;
-    } else if (isChildEdge) {
-      weight = 2;
-      minlen = 1;
-    } else if (isSiblingEdge) {
-      weight = 1;
-      minlen = 0;
-    }
-
-    graph.setEdge(edge.source, edge.target, { weight, minlen });
+function parseDateOfBirth(value: TreeMemberUI['dateOfBirth']): number | null {
+  if (!value) {
+    return null;
   }
 
-  try {
-    dagre.layout(graph);
-  } catch (error) {
-    console.error("Dagre layout failed, using raw positions as fallback:", error);
-    return nodes;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function compareMemberIdsForSiblingOrder(memberById: Map<string, TreeMemberUI>, aId: string, bId: string): number {
+  const aBirth = parseDateOfBirth(memberById.get(aId)?.dateOfBirth ?? null);
+  const bBirth = parseDateOfBirth(memberById.get(bId)?.dateOfBirth ?? null);
+
+  if (aBirth !== null && bBirth !== null && aBirth !== bBirth) {
+    return aBirth - bBirth;
   }
 
-  const positionedNodes = nodes.map((node) => {
-    const pos = graph.node(node.id);
-    if (!pos) return node;
-
-    const { width: w, height: h } = getNodeSize(node.type);
-
-    return {
-      ...node,
-      position: {
-        x: pos.x - w / 2,
-        y: pos.y - h / 2,
-      },
-    };
-  });
-
-  // Force each nexus to stay at the midpoint between spouses.
-  const nodeById = new Map(positionedNodes.map((node) => [node.id, node]));
-  const spouseEdgesToNexus = edges.filter((edge) => edge.id.includes("__to__nexus__"));
-  const spouseSourcesByNexus = new Map<string, string[]>();
-
-  spouseEdgesToNexus.forEach((edge) => {
-    const sources = spouseSourcesByNexus.get(edge.target) || [];
-    sources.push(edge.source);
-    spouseSourcesByNexus.set(edge.target, sources);
-  });
-
-  positionedNodes.forEach((node) => {
-    if (node.type !== "nexus") {
-      return;
-    }
-
-    const spouses = spouseSourcesByNexus.get(node.id) || [];
-    if (spouses.length < 2) {
-      return;
-    }
-
-    const spouseA = nodeById.get(spouses[0]);
-    const spouseB = nodeById.get(spouses[1]);
-    if (!spouseA || !spouseB) {
-      return;
-    }
-
-    const { width: aWidth, height: aHeight } = getNodeSize(spouseA.type);
-    const { width: bWidth, height: bHeight } = getNodeSize(spouseB.type);
-    const { width: nWidth, height: nHeight } = getNodeSize(node.type);
-
-    const centerAX = spouseA.position.x + aWidth / 2;
-    const centerBX = spouseB.position.x + bWidth / 2;
-    const centerAY = spouseA.position.y + aHeight / 2;
-    const centerBY = spouseB.position.y + bHeight / 2;
-
-    node.position = {
-      x: (centerAX + centerBX) / 2 - nWidth / 2,
-      y: (centerAY + centerBY) / 2 + 8 - nHeight / 2,
-    };
-  });
-
-  // Clamp spouse pair span to avoid very long dashed marriage links in dense trees.
-  const maxSpouseSpan = isMobile ? (isNarrowMobile ? 220 : 280) : 360;
-
-  positionedNodes.forEach((node) => {
-    if (node.type !== "nexus") {
-      return;
-    }
-
-    const spouses = spouseSourcesByNexus.get(node.id) || [];
-    if (spouses.length < 2) {
-      return;
-    }
-
-    const spouseA = nodeById.get(spouses[0]);
-    const spouseB = nodeById.get(spouses[1]);
-    if (!spouseA || !spouseB) {
-      return;
-    }
-
-    const { width: aWidth, height: aHeight } = getNodeSize(spouseA.type);
-    const { width: bWidth, height: bHeight } = getNodeSize(spouseB.type);
-    const { width: nWidth, height: nHeight } = getNodeSize(node.type);
-
-    const centerAX = spouseA.position.x + aWidth / 2;
-    const centerBX = spouseB.position.x + bWidth / 2;
-    const centerAY = spouseA.position.y + aHeight / 2;
-    const centerBY = spouseB.position.y + bHeight / 2;
-    const span = Math.abs(centerBX - centerAX);
-
-    if (span > maxSpouseSpan) {
-      const midX = (centerAX + centerBX) / 2;
-      const targetAX = midX - maxSpouseSpan / 2;
-      const targetBX = midX + maxSpouseSpan / 2;
-      const shiftAX = targetAX - centerAX;
-      const shiftBX = targetBX - centerBX;
-      const rowCenterY = (centerAY + centerBY) / 2;
-
-      spouseA.position = {
-        x: spouseA.position.x + shiftAX,
-        y: rowCenterY - aHeight / 2,
-      };
-      spouseB.position = {
-        x: spouseB.position.x + shiftBX,
-        y: rowCenterY - bHeight / 2,
-      };
-    }
-
-    const nextCenterAX = spouseA.position.x + aWidth / 2;
-    const nextCenterBX = spouseB.position.x + bWidth / 2;
-    const nextCenterAY = spouseA.position.y + aHeight / 2;
-    const nextCenterBY = spouseB.position.y + bHeight / 2;
-
-    node.position = {
-      x: (nextCenterAX + nextCenterBX) / 2 - nWidth / 2,
-      y: (nextCenterAY + nextCenterBY) / 2 + 8 - nHeight / 2,
-    };
-  });
-
-  return positionedNodes;
-}
-
-/**
- * Keep manual tree layout compact and visually balanced:
- * - Pack nodes on the same row to reduce excessive sibling spread.
- * - Keep each marriage nexus centered between spouses.
- */
-function applyManualLayoutPolish(
-  nodes: Node[],
-  edges: Edge[],
-  options: { isMobile: boolean; isNarrowMobile: boolean }
-): Node[] {
-  if (nodes.length === 0) {
-    return nodes;
+  if (aBirth !== null && bBirth === null) {
+    return -1;
   }
 
-  const { isMobile, isNarrowMobile } = options;
-  const polished = nodes.map((node) => ({
-    ...node,
-    position: { ...node.position },
-  }));
-
-  // 1) Compact member rows while preserving each row center.
-  const rowBucketSize = isMobile ? 120 : 140;
-  const minGap = isMobile ? (isNarrowMobile ? 150 : 170) : HORIZONTAL_GAP;
-  const fixedRowGap = isMobile ? (isNarrowMobile ? 170 : 190) : VERTICAL_GAP;
-  const rows = new Map<number, Node[]>();
-
-  polished.forEach((node) => {
-    if (node.type !== "member") {
-      return;
-    }
-
-    const rowKey = Math.round(node.position.y / rowBucketSize);
-    const row = rows.get(rowKey) || [];
-    row.push(node);
-    rows.set(rowKey, row);
-  });
-
-  rows.forEach((rowNodes) => {
-    if (rowNodes.length <= 1) {
-      return;
-    }
-
-    rowNodes.sort((a, b) => a.position.x - b.position.x);
-    const originalCenter =
-      (rowNodes[0].position.x + rowNodes[rowNodes.length - 1].position.x) / 2;
-
-    for (let i = 1; i < rowNodes.length; i += 1) {
-      const previous = rowNodes[i - 1];
-      const current = rowNodes[i];
-      const nextMinX = previous.position.x + minGap;
-      if (current.position.x < nextMinX) {
-        current.position.x = nextMinX;
-      }
-    }
-
-    const packedCenter =
-      (rowNodes[0].position.x + rowNodes[rowNodes.length - 1].position.x) / 2;
-    const centerShift = originalCenter - packedCenter;
-    rowNodes.forEach((node) => {
-      node.position.x += centerShift;
-    });
-  });
-
-  // 1.5) Snap rows to fixed vertical levels so generations remain consistently spaced.
-  const sortedRowKeys = Array.from(rows.keys()).sort((a, b) => a - b);
-  const firstRowY = sortedRowKeys.length
-    ? Math.min(...(rows.get(sortedRowKeys[0]) || []).map((n) => n.position.y))
-    : 0;
-
-  sortedRowKeys.forEach((rowKey, index) => {
-    const rowNodes = rows.get(rowKey) || [];
-    const targetY = firstRowY + index * fixedRowGap;
-    rowNodes.forEach((rowNode) => {
-      rowNode.position.y = targetY;
-    });
-  });
-
-  // 2) Re-center each marriage nexus between its spouses and clamp span.
-  const nodeById = new Map(polished.map((node) => [node.id, node]));
-  const spouseEdgesToNexus = edges.filter((edge) => edge.id.includes("__to__nexus__"));
-  const spouseSourcesByNexus = new Map<string, string[]>();
-
-  spouseEdgesToNexus.forEach((edge) => {
-    const sources = spouseSourcesByNexus.get(edge.target) || [];
-    sources.push(edge.source);
-    spouseSourcesByNexus.set(edge.target, sources);
-  });
-
-  const maxSpouseSpan = isMobile ? (isNarrowMobile ? 220 : 280) : 360;
-
-  polished.forEach((node) => {
-    if (node.type !== "nexus") {
-      return;
-    }
-
-    const spouses = spouseSourcesByNexus.get(node.id) || [];
-    if (spouses.length < 2) {
-      return;
-    }
-
-    const spouseA = nodeById.get(spouses[0]);
-    const spouseB = nodeById.get(spouses[1]);
-    if (!spouseA || !spouseB) {
-      return;
-    }
-
-    const centerAX = spouseA.position.x + MEMBER_NODE_WIDTH / 2;
-    const centerBX = spouseB.position.x + MEMBER_NODE_WIDTH / 2;
-    const centerAY = spouseA.position.y + MEMBER_NODE_HEIGHT / 2;
-    const centerBY = spouseB.position.y + MEMBER_NODE_HEIGHT / 2;
-    const span = Math.abs(centerBX - centerAX);
-
-    if (span > maxSpouseSpan) {
-      const midX = (centerAX + centerBX) / 2;
-      const targetAX = midX - maxSpouseSpan / 2;
-      const targetBX = midX + maxSpouseSpan / 2;
-      spouseA.position.x += targetAX - centerAX;
-      spouseB.position.x += targetBX - centerBX;
-    }
-
-    const nextCenterAX = spouseA.position.x + MEMBER_NODE_WIDTH / 2;
-    const nextCenterBX = spouseB.position.x + MEMBER_NODE_WIDTH / 2;
-    const nextCenterAY = spouseA.position.y + MEMBER_NODE_HEIGHT / 2;
-    const nextCenterBY = spouseB.position.y + MEMBER_NODE_HEIGHT / 2;
-
-    node.position = {
-      x: (nextCenterAX + nextCenterBX) / 2 - NEXUS_NODE_WIDTH / 2,
-      y: (nextCenterAY + nextCenterBY) / 2 + 8 - NEXUS_NODE_HEIGHT / 2,
-    };
-  });
-
-  return polished;
-}
-
-function getNexusNodeId(memberId: string, spouseId: string) {
-  return [memberId, spouseId].sort().join("__nexus__");
-}
-
-
-function compareTreeNodes(a: TreeNodeUI, b: TreeNodeUI) {
-  // RTL chronological order: older members appear more to the right.
-  const timeA = a.member.dateOfBirth ? new Date(a.member.dateOfBirth).getTime() : Number.NEGATIVE_INFINITY;
-  const timeB = b.member.dateOfBirth ? new Date(b.member.dateOfBirth).getTime() : Number.NEGATIVE_INFINITY;
-
-  if (timeA !== timeB) {
-    return timeB - timeA;
-  }
-
-  return String(b.member.fullName || "").localeCompare(String(a.member.fullName || ""), "ar");
-}
-
-function compareChildrenForRtlByBirth(a: TreeNodeUI, b: TreeNodeUI) {
-  // Desired visual order in RTL: older at the right side.
-  // Since coordinates grow left->right, place younger first.
-  const timeA = a.member.dateOfBirth
-    ? new Date(a.member.dateOfBirth).getTime()
-    : Number.NEGATIVE_INFINITY;
-  const timeB = b.member.dateOfBirth
-    ? new Date(b.member.dateOfBirth).getTime()
-    : Number.NEGATIVE_INFINITY;
-
-  if (timeA !== timeB) {
-    return timeA - timeB;
-  }
-
-  return String(a.member.fullName || "").localeCompare(String(b.member.fullName || ""), "ar");
-}
-
-function uniqueByMemberId(items: TreeNodeUI[]) {
-  const seen = new Set<string>();
-  const unique: TreeNodeUI[] = [];
-
-  items.forEach((item) => {
-    const id = item.member.id;
-    if (seen.has(id)) {
-      return;
-    }
-    seen.add(id);
-    unique.push(item);
-  });
-
-  return unique;
-}
-
-function hasDescendants(node: TreeNodeUI) {
-  return node.children.length > 0 || node.marriages.some((marriage) => marriage.children.length > 0);
-}
-
-function countBranchUnits(node: TreeNodeUI, collapsedMemberIds: Set<string>): number {
-  const allChildren = [
-    ...node.children,
-    ...node.marriages.flatMap((marriage) => marriage.children),
-  ];
-
-  if (allChildren.length === 0 || collapsedMemberIds.has(node.member.id)) {
+  if (aBirth === null && bBirth !== null) {
     return 1;
   }
 
-  return [...allChildren].sort(compareTreeNodes).reduce((total, child) => {
-    return total + countBranchUnits(child, collapsedMemberIds);
-  }, 0);
+  return aId.localeCompare(bId);
 }
 
-function getHorizontalGap(_node: TreeNodeUI) {
-  // Keep spacing fixed so sibling blocks remain predictable and easier to scan.
-  return HORIZONTAL_GAP;
-}
+function getLayoutedElements(inputNodes: Node[], inputEdges: FlowEdge[]) {
+  // ─── Pedigree Layout Constants ────────────────────────────────────────────
+  const SPOUSE_GAP = 50;   // horizontal gap between the two spouses
+  const CHILD_GAP  = 80;   // horizontal gap between adjacent child subtrees
+  const ROW_HEIGHT = 440;  // vertical distance between generations
 
-function getChildSourceHandle(childIndex: number, totalChildren: number) {
-  return totalChildren <= 1 ? "source-bottom" : "source-bottom-center";
-}
+  // ─── Build family graph ────────────────────────────────────────────────────
+  const nodesById = new Map(inputNodes.map(n => [n.id, n]));
+  const parentsByUnion  = new Map<string, string[]>(); // union ← parents
+  const childrenByUnion = new Map<string, string[]>(); // union → children
+  const parentUnionOf   = new Map<string, string>();   // member → union (as child)
+  const ownUnionsOf     = new Map<string, string[]>(); // member → own unions (as parent)
 
-function getChildTargetHandle(childIndex: number, totalChildren: number) {
-  return totalChildren <= 1 ? "target-top" : "target-top-center";
-}
+  inputEdges.forEach(edge => {
+    if (isUnionNodeId(edge.target) && !isUnionNodeId(edge.source)) {
+      const arr = parentsByUnion.get(edge.target) ?? [];
+      if (!arr.includes(edge.source)) arr.push(edge.source);
+      parentsByUnion.set(edge.target, arr);
+      const us = ownUnionsOf.get(edge.source) ?? [];
+      if (!us.includes(edge.target)) us.push(edge.target);
+      ownUnionsOf.set(edge.source, us);
+    }
+    if (isUnionNodeId(edge.source) && !isUnionNodeId(edge.target)) {
+      const arr = childrenByUnion.get(edge.source) ?? [];
+      if (!arr.includes(edge.target)) arr.push(edge.target);
+      childrenByUnion.set(edge.source, arr);
+      parentUnionOf.set(edge.target, edge.source);
+    }
+  });
 
-function getChildEdgeOverrides(childIndex: number, totalChildren: number): Partial<Edge> {
-  if (totalChildren <= 1) {
-    return {
-      type: "smoothstep",
-      pathOptions: {
-        offset: 20,
-        borderRadius: 14,
-      },
-    };
+  // Preserve input order for siblings, consistent left/right for couples
+  const inputOrder = new Map(inputNodes.map((n, i) => [n.id, i]));
+  childrenByUnion.forEach((ch, uid) =>
+    childrenByUnion.set(uid, [...ch].sort((a, b) =>
+      (inputOrder.get(a) ?? 0) - (inputOrder.get(b) ?? 0))));
+  parentsByUnion.forEach((ps, uid) => {
+    if (ps.length >= 2)
+      parentsByUnion.set(uid, [...ps].sort((a, b) => a.localeCompare(b)));
+  });
+
+  const sizeOf = (id: string) => {
+    const n = nodesById.get(id);
+    if (!n) return { width: LAYOUT_MEMBER_NODE_WIDTH, height: LAYOUT_MEMBER_NODE_HEIGHT };
+    return getNodeRenderSize(n);
+  };
+
+  // ─── Cross-branch unions: both parents are children in the tree ────────────
+  // These are processed in a second pass so each branch independently claims leaf widths.
+  const crossBranchUnions = new Set<string>();
+  parentsByUnion.forEach((parents, uid) => {
+    if (parents.length >= 2 && parents.every(pid => parentUnionOf.has(pid)))
+      crossBranchUnions.add(uid);
+  });
+
+  // For width calc: exclude cross-branch union subtrees (treat those parents as leaves)
+  const effectiveUnions = (id: string) =>
+    (ownUnionsOf.get(id) ?? []).filter(uid => !crossBranchUnions.has(uid));
+
+  // ─── Subtree width (bottom-up, memoised) ──────────────────────────────────
+  const memberWidthCache = new Map<string, number>();
+  const unionWidthCache  = new Map<string, number>();
+
+  function memberSubtreeWidth(id: string): number {
+    if (memberWidthCache.has(id)) return memberWidthCache.get(id)!;
+    const unions = effectiveUnions(id);
+    const w = unions.length > 0
+      ? Math.max(...unions.map(uid => unionSubtreeWidth(uid)))
+      : sizeOf(id).width;
+    memberWidthCache.set(id, w);
+    return w;
   }
 
-  const middle = (totalChildren - 1) / 2;
-  const distanceFromMiddle = Math.abs(childIndex - middle);
+  function unionSubtreeWidth(uid: string): number {
+    if (unionWidthCache.has(uid)) return unionWidthCache.get(uid)!;
+    const parents  = parentsByUnion.get(uid)  ?? [];
+    const children = childrenByUnion.get(uid) ?? [];
+    const coupleSpan = parents.length >= 2
+      ? sizeOf(parents[0]).width + SPOUSE_GAP + sizeOf(parents[1]).width
+      : parents.length === 1 ? sizeOf(parents[0]).width : 0;
+    const childSpan = children.reduce((sum, cid, i) =>
+      sum + memberSubtreeWidth(cid) + (i > 0 ? CHILD_GAP : 0), 0);
+    const w = Math.max(coupleSpan, childSpan, LAYOUT_UNION_NODE_WIDTH);
+    unionWidthCache.set(uid, w);
+    return w;
+  }
 
-  return {
-    type: "smoothstep",
-    pathOptions: {
-      offset: 20 + distanceFromMiddle * 8,
-      borderRadius: 14 + distanceFromMiddle * 4,
-    },
-    style: {
-      strokeWidth: 2,
-      opacity: 0.92,
-    },
-  };
-}
+  // ─── Position assignment (top-down) ──────────────────────────────────────
+  const positions     = new Map<string, { x: number; y: number }>();
+  const visitedUnions = new Set<string>();
 
-function getChildClusterGap(isMobile: boolean) {
-  return isMobile ? CHILD_CLUSTER_GAP_MOBILE : HORIZONTAL_GAP;
-}
+  function positionUnion(uid: string, centerX: number, generation: number): void {
+    if (visitedUnions.has(uid) || crossBranchUnions.has(uid)) return;
+    visitedUnions.add(uid);
 
-function buildEdge(
-  id: string,
-  source: string,
-  target: string,
-  relation: "parent" | "child" | "sibling" | "spouse",
-  sourceHandle?: string,
-  targetHandle?: string,
-  overrides?: Partial<Edge>
-): Edge {
-  const styles = {
-    parent: { stroke: "#60a5fa", strokeWidth: 2 },
-    child: { stroke: "#34d399", strokeWidth: 2 },
-    sibling: { stroke: "#f59e0b", strokeWidth: 1.8, strokeDasharray: "6 4" },
-    spouse: { stroke: "#e879f9", strokeWidth: 3, strokeDasharray: "10 6" },
-  };
+    const parents  = parentsByUnion.get(uid)  ?? [];
+    const children = childrenByUnion.get(uid) ?? [];
+    const parentY  = generation * ROW_HEIGHT;
+    const parentH  = parents.length > 0 ? sizeOf(parents[0]).height : LAYOUT_MEMBER_NODE_HEIGHT;
+    const unionY   = parentY + (parentH - LAYOUT_UNION_NODE_HEIGHT) / 2;
 
-  const markerColor =
-    relation === "parent"
-      ? "#60a5fa"
-      : relation === "child"
-        ? "#34d399"
-        : relation === "sibling"
-          ? "#f59e0b"
-          : undefined;
+    positions.set(uid, { x: centerX - LAYOUT_UNION_NODE_WIDTH / 2, y: unionY });
 
-  const defaultEdgeTypeByRelation: Record<"parent" | "child" | "sibling" | "spouse", Edge["type"]> = {
-    parent: "smoothstep",
-    child: "smoothstep",
-    sibling: "smoothstep",
-    spouse: "straight",
-  };
-
-  return {
-    id,
-    source,
-    target,
-    type: overrides?.type || defaultEdgeTypeByRelation[relation],
-    animated: false,
-    sourceHandle,
-    targetHandle,
-    style: {
-      ...styles[relation],
-      ...(overrides?.style || {}),
-    },
-    zIndex: overrides?.zIndex,
-    ...(markerColor
-      ? {
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: markerColor,
-          },
-        }
-      : {}),
-  };
-}
-
-function convertTreeToGraph(
-  node: TreeNodeUI | null,
-  familyName?: string,
-  onRefresh?: () => void,
-  collapsedMemberIds: Set<string> = new Set(),
-  onToggleCollapse?: (memberId: string) => void,
-  isMobile = false,
-  isCompactMobile = false,
-  showExtendedMobile = false,
-  forceDescendantsOnly = false
-) {
-  const nodeMap = new Map<string, Node>();
-  const edgeMap = new Map<string, Edge>();
-  const processedMembers = new Set<string>();
-  const focusDescendantsOnly = (isMobile && !showExtendedMobile) || forceDescendantsOnly;
-
-  function ensureNode(treeNode: TreeNodeUI, x = 0, y = 0) {
-    const memberId = treeNode.member.id;
-
-    const existing = nodeMap.get(memberId);
-    if (existing) {
-      return;
+    if (parents.length >= 2) {
+      const [lId, rId] = parents;
+      const lW = sizeOf(lId).width;
+      positions.set(lId, { x: centerX - SPOUSE_GAP / 2 - lW, y: parentY });
+      positions.set(rId, { x: centerX + SPOUSE_GAP / 2,       y: parentY });
+    } else if (parents.length === 1) {
+      const lW = sizeOf(parents[0]).width;
+      positions.set(parents[0], { x: centerX - lW / 2, y: parentY });
     }
 
-    nodeMap.set(memberId, {
-      id: memberId,
-      data: {
-        member: treeNode.member,
-        familyName,
-        onRefresh,
-        isMobile,
-        isCompactMobile,
-        isCollapsed: collapsedMemberIds.has(memberId),
-        hasDescendants: hasDescendants(treeNode),
-        onToggleCollapse,
-      },
-      position: { x, y },
-      type: "member",
-      sourcePosition: Position.Bottom,
-      targetPosition: Position.Top,
-      draggable: true,
+    if (children.length > 0) {
+      const childY    = (generation + 1) * ROW_HEIGHT;
+      const totalSpan = children.reduce((sum, cid, i) =>
+        sum + memberSubtreeWidth(cid) + (i > 0 ? CHILD_GAP : 0), 0);
+      let cursorX = centerX - totalSpan / 2;
+
+      children.forEach(childId => {
+        const cw           = memberSubtreeWidth(childId);
+        const childCenterX = cursorX + cw / 2;
+        const childOwnNonCross = effectiveUnions(childId);
+
+        if (childOwnNonCross.length > 0) {
+          childOwnNonCross.forEach(cuid => positionUnion(cuid, childCenterX, generation + 1));
+        } else {
+          // Leaf node — position directly (may be overridden by cross-branch pass)
+          const cs = sizeOf(childId);
+          positions.set(childId, { x: childCenterX - cs.width / 2, y: childY });
+        }
+        cursorX += cw + CHILD_GAP;
+      });
+    }
+  }
+
+  // ─── Root unions (founders who are not children of any other union) ────────
+  const allUnionIds  = inputNodes.filter(n => isUnionNodeId(n.id)).map(n => n.id);
+  const rootUnionIds = allUnionIds.filter(uid => {
+    if (crossBranchUnions.has(uid)) return false;
+    const parents = parentsByUnion.get(uid) ?? [];
+    return parents.every(pid => !parentUnionOf.has(pid));
+  });
+
+  let rootCursorX = 0;
+  rootUnionIds.forEach(uid => {
+    const w = unionSubtreeWidth(uid);
+    positionUnion(uid, rootCursorX + w / 2, 0);
+    rootCursorX += w + CHILD_GAP;
+  });
+
+  // ─── Second pass: place cross-branch couples ──────────────────────────────
+  // Sort by generation (shallow first) so parent cross-branches are placed before children.
+  const crossBranchList = [...crossBranchUnions].sort((a, b) => {
+    const genOf = (uid: string) => {
+      const ps = parentsByUnion.get(uid) ?? [];
+      return ps.reduce((mx, pid) => {
+        const pos = positions.get(pid);
+        return Math.max(mx, pos ? Math.round(pos.y / ROW_HEIGHT) : 0);
+      }, 0);
+    };
+    return genOf(a) - genOf(b);
+  });
+
+  crossBranchList.forEach(uid => {
+    if (visitedUnions.has(uid)) return;
+    visitedUnions.add(uid);
+
+    const parents  = parentsByUnion.get(uid)  ?? [];
+    const children = childrenByUnion.get(uid) ?? [];
+    if (parents.length < 2) return;
+
+    const [lId, rId] = parents;
+    const lW = sizeOf(lId).width;
+    const lH = sizeOf(lId).height;
+    const posL = positions.get(lId);
+    const posR = positions.get(rId);
+
+    // Determine couple Y: use the maximum (deepest) generation of the two parents
+    const lY = posL?.y ?? 0;
+    const rY = posR?.y ?? 0;
+    const coupleY = Math.max(lY, rY);
+
+    // Center the couple at the midpoint of where the two parents currently are
+    const lCX = (posL?.x ?? 0) + lW / 2;
+    const rCX = (posR?.x ?? 0) + sizeOf(rId).width / 2;
+    const coupleCenterX = (lCX + rCX) / 2;
+
+    // Place both parents adjacent around that center
+    positions.set(lId, { x: coupleCenterX - SPOUSE_GAP / 2 - lW,    y: coupleY });
+    positions.set(rId, { x: coupleCenterX + SPOUSE_GAP / 2,          y: coupleY });
+    positions.set(uid, {
+      x: coupleCenterX - LAYOUT_UNION_NODE_WIDTH / 2,
+      y: coupleY + (lH - LAYOUT_UNION_NODE_HEIGHT) / 2,
+    });
+
+    // Place children below
+    if (children.length > 0) {
+      const childGen  = Math.round(coupleY / ROW_HEIGHT) + 1;
+      const childY    = childGen * ROW_HEIGHT;
+      const totalSpan = children.reduce((sum, cid, i) =>
+        sum + memberSubtreeWidth(cid) + (i > 0 ? CHILD_GAP : 0), 0);
+      let cursorX = coupleCenterX - totalSpan / 2;
+
+      children.forEach(childId => {
+        const cw           = memberSubtreeWidth(childId);
+        const childCenterX = cursorX + cw / 2;
+        const childUnions  = (ownUnionsOf.get(childId) ?? []).filter(
+          cuid => !crossBranchUnions.has(cuid));
+
+        if (childUnions.length > 0) {
+          childUnions.forEach(cuid => positionUnion(cuid, childCenterX, childGen));
+        } else {
+          const cs = sizeOf(childId);
+          positions.set(childId, { x: childCenterX - cs.width / 2, y: childY });
+        }
+        cursorX += cw + CHILD_GAP;
+      });
+    }
+  });
+
+  // ─── Third pass: global couple stabilization (with and without children) ──
+  const spouseOnlyPairs = inputEdges
+    .filter(edge => edge.id.startsWith('spouse-link-'))
+    .filter(edge => !isUnionNodeId(edge.source) && !isUnionNodeId(edge.target));
+
+  const couplePairs = new Map<string, { aId: string; bId: string; anchorUnionId?: string }>();
+
+  allUnionIds.forEach(uid => {
+    const parents = parentsByUnion.get(uid) ?? [];
+    if (parents.length < 2) return;
+
+    const [aId, bId] = parents.slice(0, 2);
+    const key = [aId, bId].sort((a, b) => a.localeCompare(b)).join('::');
+    if (!couplePairs.has(key)) {
+      couplePairs.set(key, { aId, bId, anchorUnionId: uid });
+    }
+  });
+
+  spouseOnlyPairs.forEach(edge => {
+    const aId = edge.source;
+    const bId = edge.target;
+    const key = [aId, bId].sort((a, b) => a.localeCompare(b)).join('::');
+    if (!couplePairs.has(key)) {
+      couplePairs.set(key, { aId, bId });
+    }
+  });
+
+  // Iterative relaxation avoids brittle one-pass overrides when members participate
+  // in multiple unions or when cross-branch compaction shifts nodes later.
+  for (let iteration = 0; iteration < 6; iteration += 1) {
+    couplePairs.forEach(pair => {
+      const posA = positions.get(pair.aId);
+      const posB = positions.get(pair.bId);
+      if (!posA || !posB) return;
+
+      const sizeA = sizeOf(pair.aId);
+      const sizeB = sizeOf(pair.bId);
+
+      const centerAX = posA.x + sizeA.width / 2;
+      const centerBX = posB.x + sizeB.width / 2;
+      const coupleY = Math.max(posA.y, posB.y);
+
+      const [leftId, rightId] = centerAX <= centerBX ? [pair.aId, pair.bId] : [pair.bId, pair.aId];
+      const leftSize = sizeOf(leftId);
+      const rightSize = sizeOf(rightId);
+
+      const anchorUnionPos = pair.anchorUnionId ? positions.get(pair.anchorUnionId) : undefined;
+      const desiredCenterX = anchorUnionPos
+        ? anchorUnionPos.x + LAYOUT_UNION_NODE_WIDTH / 2
+        : (centerAX + centerBX) / 2;
+
+      const leftTargetX = desiredCenterX - SPOUSE_GAP / 2 - leftSize.width;
+      const rightTargetX = desiredCenterX + SPOUSE_GAP / 2;
+
+      const leftCurrentX = positions.get(leftId)?.x ?? leftTargetX;
+      const rightCurrentX = positions.get(rightId)?.x ?? rightTargetX;
+
+      const blend = 0.65;
+      const leftNextX = leftCurrentX + (leftTargetX - leftCurrentX) * blend;
+      const rightNextX = rightCurrentX + (rightTargetX - rightCurrentX) * blend;
+
+      positions.set(leftId, { x: leftNextX, y: coupleY });
+      positions.set(rightId, { x: rightNextX, y: coupleY });
+
+      if (pair.anchorUnionId) {
+        const coupleHeight = Math.max(sizeA.height, sizeB.height);
+        positions.set(pair.anchorUnionId, {
+          x: desiredCenterX - LAYOUT_UNION_NODE_WIDTH / 2,
+          y: coupleY + (coupleHeight - LAYOUT_UNION_NODE_HEIGHT) / 2,
+        });
+      }
     });
   }
 
-  function ensureEdge(edge: Edge) {
-    if (!edgeMap.has(edge.id)) {
-      edgeMap.set(edge.id, edge);
+  // ─── Fallback for any unpositioned node ───────────────────────────────────
+  inputNodes.forEach(n => {
+    if (!positions.has(n.id)) positions.set(n.id, n.position);
+  });
+
+  // ─── Apply positions ───────────────────────────────────────────────────────
+  const nodes = inputNodes.map(n => ({
+    ...n,
+    position: positions.get(n.id) ?? n.position,
+  }));
+
+  return { nodes, edges: inputEdges };
+}
+function extractMembersAndRelationshipsFromTree(
+  root: TreeNodeUI | null,
+  collapsedMemberIds: Set<string>,
+  focusDescendantsOnly: boolean
+): { members: TreeMemberUI[]; relationships: RawRelationship[]; spouses: Set<string>; spouseLinks: SpouseLink[] } {
+  if (!root) {
+    return { members: [], relationships: [], spouses: new Set(), spouseLinks: [] };
+  }
+
+  const memberMap = new Map<string, TreeMemberUI>();
+  const queue: TreeNodeUI[] = [root];
+  const visitedLineage = new Set<string>();
+  const relationshipsByChild = new Map<string, Map<string, string[]>>();
+  const spousePairs = new Set<string>();
+  const spouseLinksMap = new Map<string, SpouseLink>();
+
+  const registerSpouseLink = (a: string, b: string) => {
+    if (!a || !b || a === b) return;
+    const [leftId, rightId] = [a, b].sort((x, y) => x.localeCompare(y));
+    const key = `${leftId}::${rightId}`;
+    if (!spouseLinksMap.has(key)) spouseLinksMap.set(key, { leftId, rightId });
+  };
+
+  const registerMember = (node: TreeNodeUI | null) => {
+    if (!node) return;
+    if (!memberMap.has(node.member.id)) memberMap.set(node.member.id, node.member);
+  };
+
+  const registerRelationship = (childId: string, parentIds: string[]) => {
+    const normalizedParents = Array.from(new Set(parentIds)).filter(Boolean).sort((a, b) => a.localeCompare(b));
+    if (!childId || normalizedParents.length === 0) return;
+    const parentKey = normalizedParents.join(',');
+    const currentMap = relationshipsByChild.get(childId) ?? new Map<string, string[]>();
+    currentMap.set(parentKey, normalizedParents);
+    relationshipsByChild.set(childId, currentMap);
+  };
+
+  const inferFallbackParents = (childNode: TreeNodeUI, primaryParentId: string): string[] => {
+    const inferred = childNode.parents.map((parent) => parent.member.id).filter(Boolean);
+    const merged = Array.from(new Set([primaryParentId, ...inferred]));
+    return merged.length > 0 ? merged : [primaryParentId];
+  };
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) continue;
+    const currentId = current.member.id;
+    if (visitedLineage.has(currentId)) continue;
+    visitedLineage.add(currentId);
+    registerMember(current);
+    if (collapsedMemberIds.has(currentId)) continue;
+
+    const marriageParentsByChild = new Map<string, string[]>();
+
+    current.marriages.forEach((marriage) => {
+      const spouse = marriage.spouse;
+      const spouseId = spouse?.member.id;
+      if (spouse) {
+        registerMember(spouse);
+        registerSpouseLink(currentId, spouseId || '');
+        if (spouseId) spousePairs.add(spouseId);
+        if (spouseId && !visitedLineage.has(spouseId)) queue.push(spouse);
+      }
+      marriage.children.forEach((child) => {
+        registerMember(child);
+        const parentIds = spouseId
+          ? Array.from(new Set([currentId, spouseId]))
+          : inferFallbackParents(child, currentId);
+        marriageParentsByChild.set(child.member.id, parentIds);
+        registerRelationship(child.member.id, parentIds);
+        queue.push(child);
+      });
+    });
+
+    current.children.forEach((child) => {
+      registerMember(child);
+      const parentIds = marriageParentsByChild.get(child.member.id) ?? inferFallbackParents(child, currentId);
+      registerRelationship(child.member.id, parentIds);
+      queue.push(child);
+    });
+
+    if (!focusDescendantsOnly) {
+      current.parents.forEach((parent) => { registerMember(parent); });
+    }
+
+    current.spouses.forEach((spouse) => {
+      registerMember(spouse);
+      registerSpouseLink(currentId, spouse.member.id);
+      spousePairs.add(spouse.member.id);
+      if (!visitedLineage.has(spouse.member.id)) queue.push(spouse);
+    });
+  }
+
+  const normalizedRelationships: RawRelationship[] = [];
+  relationshipsByChild.forEach((relationMap, childId) => {
+    const candidates = Array.from(relationMap.values());
+    if (candidates.length === 0) return;
+    candidates.sort((a, b) => {
+      if (b.length !== a.length) return b.length - a.length;
+      return a.join(',').localeCompare(b.join(','));
+    });
+    normalizedRelationships.push({ childId, parentIds: candidates[0] });
+  });
+
+  return {
+    members: Array.from(memberMap.values()),
+    relationships: normalizedRelationships,
+    spouses: spousePairs,
+    spouseLinks: Array.from(spouseLinksMap.values()),
+  };
+}
+
+function transformDataToElements(
+  members: TreeMemberUI[],
+  relationships: RawRelationship[],
+  options: TransformOptions = {}
+): { nodes: Node[]; edges: FlowEdge[] } {
+  const {
+    familyName,
+    onRefresh,
+    isMobile = false,
+    isCompactMobile = false,
+    collapsedMemberIds = new Set<string>(),
+    onToggleCollapse,
+    spouses = new Set<string>(),
+    spouseLinks = [],
+  } = options;
+
+  const memberWidth = isCompactMobile
+    ? COMPACT_MOBILE_MEMBER_NODE_WIDTH
+    : isMobile
+      ? MOBILE_MEMBER_NODE_WIDTH
+      : MEMBER_NODE_WIDTH;
+  const memberHeight = isCompactMobile
+    ? COMPACT_MOBILE_MEMBER_NODE_HEIGHT
+    : isMobile
+      ? MOBILE_MEMBER_NODE_HEIGHT
+      : MEMBER_NODE_HEIGHT;
+
+  const memberById = new Map(members.map((member) => [member.id, member]));
+
+  const normalizedRelationships = relationships.map((relationship) => ({
+    childId: relationship.childId,
+    parentIds: Array.from(new Set(relationship.parentIds)).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+  }));
+
+  normalizedRelationships.sort((a, b) => {
+    const aParentKey = a.parentIds.join('::');
+    const bParentKey = b.parentIds.join('::');
+    if (aParentKey !== bParentKey) {
+      return aParentKey.localeCompare(bParentKey);
+    }
+
+    return compareMemberIdsForSiblingOrder(memberById, a.childId, b.childId);
+  });
+
+  const rootId = members[0]?.id;
+  const childrenByParent = new Map<string, Set<string>>();
+
+  normalizedRelationships.forEach((relationship) => {
+    relationship.parentIds.forEach((parentId) => {
+      const children = childrenByParent.get(parentId) ?? new Set<string>();
+      children.add(relationship.childId);
+      childrenByParent.set(parentId, children);
+    });
+  });
+
+  const generationByMember = new Map<string, number>();
+  if (rootId) {
+    generationByMember.set(rootId, 0);
+    const queue: string[] = [rootId];
+
+    while (queue.length > 0) {
+      const currentId = queue.shift();
+      if (!currentId) {
+        continue;
+      }
+
+      const currentGeneration = generationByMember.get(currentId) ?? 0;
+      const children = childrenByParent.get(currentId) ?? new Set<string>();
+      children.forEach((childId) => {
+        const nextGeneration = currentGeneration + 1;
+        const existingGeneration = generationByMember.get(childId);
+        if (existingGeneration === undefined || nextGeneration > existingGeneration) {
+          generationByMember.set(childId, nextGeneration);
+          queue.push(childId);
+        }
+      });
     }
   }
 
-  function ensureNexusNode(id: string, x: number, y: number) {
-    const existing = nodeMap.get(id);
-    if (existing) {
+  const descendantParentIds = new Set<string>();
+  normalizedRelationships.forEach((relationship) => {
+    relationship.parentIds.forEach((parentId) => descendantParentIds.add(parentId));
+  });
+
+  const nodes: Node[] = members.map((member) => ({
+    id: member.id,
+    type: 'member',
+    position: { x: 0, y: 0 },
+    data: {
+      member,
+      familyName,
+      onRefresh,
+      isMobile,
+      isCompactMobile,
+      isCollapsed: collapsedMemberIds.has(member.id),
+      hasDescendants: descendantParentIds.has(member.id),
+      onToggleCollapse,
+      layoutRank: (generationByMember.get(member.id) ?? 0) * 2,
+    },
+    sourcePosition: Position.Bottom,
+    targetPosition: Position.Top,
+    style: {
+      width: memberWidth,
+      minHeight: memberHeight,
+    },
+  }));
+
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges: FlowEdge[] = [];
+  const edgeIds = new Set<string>();
+  const unionRankById = new Map<string, number>();
+
+  const pushEdge = (edge: FlowEdge) => {
+    if (edgeIds.has(edge.id)) return;
+    edgeIds.add(edge.id);
+    edges.push(edge);
+  };
+
+  const ensureUnionNode = (unionId: string) => {
+    if (nodeIds.has(unionId)) {
       return;
     }
 
-    nodeMap.set(id, {
-      id,
-      data: {},
-      position: { x, y },
-      type: "nexus",
+    nodes.push({
+      id: unionId,
+      type: 'union',
+      position: { x: 0, y: 0 },
+      data: {
+        layoutRank: unionRankById.get(unionId) ?? 1,
+      },
       sourcePosition: Position.Bottom,
       targetPosition: Position.Top,
       draggable: false,
       selectable: false,
+      connectable: false,
+      style: {
+        width: LAYOUT_UNION_NODE_WIDTH,
+        height: LAYOUT_UNION_NODE_HEIGHT,
+      },
     });
-  }
+    nodeIds.add(unionId);
+  };
 
-  function getSortedMarriageGroups(treeNode: TreeNodeUI) {
-    return [...treeNode.marriages].sort((a, b) => {
-      if (!a.spouse && !b.spouse) return 0;
-      if (!a.spouse) return 1;
-      if (!b.spouse) return -1;
-      return compareTreeNodes(a.spouse, b.spouse);
+  const spouseLinkKeys = new Set(
+    spouseLinks.map((link) => [link.leftId, link.rightId].sort((a, b) => a.localeCompare(b)).join('::'))
+  );
+
+  const hasExplicitCoupleLink = (parentIds: string[]): boolean => {
+    if (parentIds.length < 2) {
+      return false;
+    }
+    const pairKey = [parentIds[0], parentIds[1]].sort((a, b) => a.localeCompare(b)).join('::');
+    return spouseLinkKeys.has(pairKey);
+  };
+
+  const spousePairsWithChildren = new Set(
+    normalizedRelationships
+      .filter((relationship) => relationship.parentIds.length >= 2 && hasExplicitCoupleLink(relationship.parentIds))
+      .map((relationship) => [relationship.parentIds[0], relationship.parentIds[1]].sort((a, b) => a.localeCompare(b)).join('::'))
+  );
+
+  const singleParentChildIdsByParent = new Map<string, string[]>();
+  normalizedRelationships.forEach((relationship) => {
+    const isRealSingleParent = relationship.parentIds.length === 1;
+    const isVisualSingleParent = relationship.parentIds.length >= 2 && !hasExplicitCoupleLink(relationship.parentIds);
+
+    if (!isRealSingleParent && !isVisualSingleParent) {
+      return;
+    }
+
+    const parentId = relationship.parentIds[0];
+    const childIds = singleParentChildIdsByParent.get(parentId) ?? [];
+    childIds.push(relationship.childId);
+    singleParentChildIdsByParent.set(parentId, childIds);
+  });
+
+  const fanOutSourceHandles = [
+    'source-bottom-far-left',
+    'source-bottom-left',
+    'source-bottom-center',
+    'source-bottom-right',
+    'source-bottom-far-right',
+  ] as const;
+  const fanOutTargetHandles = [
+    'target-top-far-left',
+    'target-top-left',
+    'target-top-center',
+    'target-top-right',
+    'target-top-far-right',
+  ] as const;
+
+  const siblingHandlesForCouples = [
+    { source: 'source-bottom-far-left', target: 'target-top-far-left' },
+    { source: 'source-bottom-left', target: 'target-top-left' },
+    { source: 'source-bottom-center', target: 'target-top-center' },
+    { source: 'source-bottom-right', target: 'target-top-right' },
+    { source: 'source-bottom-far-right', target: 'target-top-far-right' },
+  ] as const;
+
+  const childIdsByUnionId = new Map<string, string[]>();
+  normalizedRelationships.forEach((relationship) => {
+    if (relationship.parentIds.length < 2 || !hasExplicitCoupleLink(relationship.parentIds)) {
+      return;
+    }
+
+    const unionId = `union-${relationship.parentIds.join('-')}`;
+    const bucket = childIdsByUnionId.get(unionId) ?? [];
+    bucket.push(relationship.childId);
+    childIdsByUnionId.set(unionId, bucket);
+  });
+
+  childIdsByUnionId.forEach((childIds, unionId) => {
+    const sorted = [...childIds].sort((a, b) => compareMemberIdsForSiblingOrder(memberById, a, b));
+    childIdsByUnionId.set(unionId, sorted);
+  });
+
+  const singleParentUnionByParentId = new Map<string, string>();
+
+  const ensureSingleParentUnionNode = (parentId: string) => {
+    const existingUnionId = singleParentUnionByParentId.get(parentId);
+    if (existingUnionId) {
+      return existingUnionId;
+    }
+
+    const unionId = `union-single-${parentId}`;
+    const parentGeneration = generationByMember.get(parentId) ?? 0;
+    unionRankById.set(unionId, parentGeneration * 2 + 1);
+    ensureUnionNode(unionId);
+    singleParentUnionByParentId.set(parentId, unionId);
+
+    pushEdge({
+      id: `${parentId}->${unionId}`,
+      source: parentId,
+      target: unionId,
+      type: 'step',
+      sourceHandle: 'source-bottom-center',
+      targetHandle: 'target-top-center',
+      pathOptions: { borderRadius: 10, offset: 20 },
+      weight: 5,
+      animated: false,
+      style: { stroke: '#1d4ed8', strokeWidth: 2.8 },
     });
-  }
 
-  function placeSpouses(treeNode: TreeNodeUI, memberX: number, memberY: number, hideSpouseEdges = false) {
-    const sortedMarriages = getSortedMarriageGroups(treeNode);
-    const localHorizontalGap = getHorizontalGap(treeNode);
+    return unionId;
+  };
 
-    const marriageLayouts = sortedMarriages.map((marriage, index) => {
-      const spouse = marriage.spouse;
-      const spouseX = memberX + (index + 1) * localHorizontalGap;
-      const nexusX = memberX + (index + 0.5) * localHorizontalGap;
-      const nexusY = memberY + MARRIAGE_CHILD_ANCHOR_Y_OFFSET;
-      const nexusNodeId = spouse
-        ? getNexusNodeId(treeNode.member.id, spouse.member.id)
-        : `${treeNode.member.id}__nexus__${marriage.marriageId}`;
+  normalizedRelationships.forEach((relationship) => {
+    const childId = relationship.childId;
+    const parentIds = relationship.parentIds;
 
-      if (spouse) {
-        ensureNode(spouse, spouseX, memberY);
-      }
+    if (!nodeIds.has(childId) || parentIds.length === 0) {
+      return;
+    }
 
-      ensureNexusNode(nexusNodeId, nexusX, nexusY);
+    if (!parentIds.every((parentId) => nodeIds.has(parentId))) {
+      return;
+    }
 
-      // In simplified mode, skip drawing spouse connection lines to reduce visual clutter
-      if (!hideSpouseEdges) {
-        // Y-connection arm 1: husband -> nexus
-        ensureEdge(
-          buildEdge(
-            `${treeNode.member.id}__to__nexus__${nexusNodeId}`,
-            treeNode.member.id,
-            nexusNodeId,
-            "spouse",
-            "source-right",
-            "target-left",
-            {
-              type: "straight",
-              zIndex: 5,
-              style: { strokeWidth: 2.4, strokeDasharray: "9 4" },
-            }
-          )
-        );
+    const isVisualSingleParent = parentIds.length >= 2 && !hasExplicitCoupleLink(parentIds);
 
-        if (spouse) {
-          // Y-connection arm 2: wife -> nexus
-          ensureEdge(
-            buildEdge(
-              `${spouse.member.id}__to__nexus__${nexusNodeId}`,
-              spouse.member.id,
-              nexusNodeId,
-              "spouse",
-              "source-left",
-              "target-right",
-              {
-                type: "straight",
-                zIndex: 5,
-                style: { strokeWidth: 2.4, strokeDasharray: "9 4" },
-              }
-            )
-          );
-        }
-      }
+    if (isVisualSingleParent) {
+      const visualParentId = parentIds[0];
+      const unionId = ensureSingleParentUnionNode(visualParentId);
+      const siblingChildIds = singleParentChildIdsByParent.get(visualParentId) ?? [];
+      const siblingIndex = Math.max(0, siblingChildIds.findIndex((id) => id === childId));
+      const handleIndex = siblingIndex % fanOutSourceHandles.length;
 
-      return {
-        marriageId: marriage.marriageId,
-        marriageNodeId: nexusNodeId,
-        anchorX: nexusX,
-        children: uniqueByMemberId([...marriage.children]).sort(compareChildrenForRtlByBirth),
-      };
+      pushEdge({
+        id: `${unionId}->${childId}`,
+        source: unionId,
+        target: childId,
+        type: 'step',
+        sourceHandle: fanOutSourceHandles[handleIndex],
+        targetHandle: fanOutTargetHandles[handleIndex],
+        pathOptions: { borderRadius: 10, offset: 20 },
+        weight: 1,
+        animated: false,
+        style: { stroke: '#1d4ed8', strokeWidth: 3.5 },
+        markerEnd: createMarkerArrow('#1d4ed8'),
+      });
+
+      return;
+    }
+
+    if (parentIds.length >= 2) {
+      const unionId = `union-${parentIds.join('-')}`;
+      const maxParentGeneration = parentIds.reduce(
+        (maxGeneration, parentId) => Math.max(maxGeneration, generationByMember.get(parentId) ?? 0),
+        0
+      );
+      unionRankById.set(unionId, maxParentGeneration * 2 + 1);
+      ensureUnionNode(unionId);
+
+      const [leftParentId, rightParentId] = parentIds
+        .slice(0, 2)
+        .sort((a, b) => a.localeCompare(b));
+
+      parentIds.forEach((parentId) => {
+        const isLeftParent = parentId === leftParentId;
+        pushEdge({
+          id: `${parentId}->${unionId}`,
+          source: parentId,
+          target: unionId,
+          type: 'straight',
+          sourceHandle: isLeftParent ? 'source-right' : 'source-left',
+          targetHandle: isLeftParent ? 'target-left' : 'target-right',
+          weight: 25,
+          animated: false,
+          style: { stroke: '#22c55e', strokeWidth: 2.8 },
+        });
+      });
+
+      pushEdge({
+        id: `${unionId}->${childId}`,
+        source: unionId,
+        target: childId,
+        type: 'step',
+        sourceHandle: siblingHandlesForCouples[
+          Math.max(0, (childIdsByUnionId.get(unionId) ?? []).findIndex((id) => id === childId)) %
+            siblingHandlesForCouples.length
+        ].source,
+        targetHandle: siblingHandlesForCouples[
+          Math.max(0, (childIdsByUnionId.get(unionId) ?? []).findIndex((id) => id === childId)) %
+            siblingHandlesForCouples.length
+        ].target,
+        pathOptions: { borderRadius: 10, offset: 20 },
+        weight: 1,
+        animated: false,
+        style: { stroke: '#16a34a', strokeWidth: 3.5 },
+        markerEnd: createMarkerArrow('#16a34a'),
+      });
+
+      return;
+    }
+
+    const unionId = ensureSingleParentUnionNode(parentIds[0]);
+    const siblingChildIds = singleParentChildIdsByParent.get(parentIds[0]) ?? [];
+    const siblingIndex = Math.max(0, siblingChildIds.findIndex((id) => id === childId));
+    const handleIndex = siblingIndex % fanOutSourceHandles.length;
+
+    pushEdge({
+      id: `${unionId}->${childId}`,
+      source: unionId,
+      target: childId,
+      type: 'step',
+      sourceHandle: fanOutSourceHandles[handleIndex],
+      targetHandle: fanOutTargetHandles[handleIndex],
+      pathOptions: { borderRadius: 10, offset: 20 },
+      weight: 1,
+      animated: false,
+      style: { stroke: '#1d4ed8', strokeWidth: 3.5 },
+      markerEnd: createMarkerArrow('#1d4ed8'),
     });
+  });
 
-    return {
-      marriageLayouts,
-    };
-  }
+  spouseLinks.forEach((link) => {
+    if (!nodeIds.has(link.leftId) || !nodeIds.has(link.rightId)) {
+      return;
+    }
 
-  function getChildSections(
-    treeNode: TreeNodeUI,
-    memberX: number,
-    spouseLayout: ReturnType<typeof placeSpouses>
-  ) {
-    const sections: Array<{
-      sectionId: string;
-      sourceId: string;
-      anchorX: number;
-      children: TreeNodeUI[];
-    }> = [];
+    const sortedParentIds = [link.leftId, link.rightId].sort((a, b) => a.localeCompare(b));
+    const key = sortedParentIds.join('::');
+    if (spousePairsWithChildren.has(key)) {
+      return;
+    }
 
-    const marriageChildrenIds = new Set(
-      spouseLayout.marriageLayouts.flatMap((layout) => layout.children.map((child) => child.member.id))
+    // Build a real union even when there are no children so all couples share one layout model.
+    const unionId = `union-${sortedParentIds.join('-')}`;
+    const maxParentGeneration = sortedParentIds.reduce(
+      (maxGeneration, parentId) => Math.max(maxGeneration, generationByMember.get(parentId) ?? 0),
+      0
     );
+    unionRankById.set(unionId, maxParentGeneration * 2 + 1);
+    ensureUnionNode(unionId);
 
-    // Keep only children that are not already attached to a marriage nexus.
-    const directChildren = uniqueByMemberId([...treeNode.children])
-      .filter((child) => !marriageChildrenIds.has(child.member.id))
-      .sort(compareChildrenForRtlByBirth);
+    const [leftParentId, rightParentId] = sortedParentIds;
 
-    if (directChildren.length > 0) {
-      sections.push({
-        sectionId: `${treeNode.member.id}__children__direct`,
-        sourceId: treeNode.member.id,
-        anchorX: memberX,
-        children: directChildren,
-      });
-    }
-
-    spouseLayout.marriageLayouts.forEach((layout) => {
-      if (layout.children.length === 0) {
-        return;
-      }
-
-      sections.push({
-        sectionId: `${layout.marriageNodeId}__children`,
-        sourceId: layout.marriageNodeId,
-        anchorX: layout.anchorX,
-        children: layout.children,
+    sortedParentIds.forEach((parentId) => {
+      const isLeftParent = parentId === leftParentId;
+      pushEdge({
+        id: `${parentId}->${unionId}`,
+        source: parentId,
+        target: unionId,
+        type: 'straight',
+        sourceHandle: isLeftParent ? 'source-right' : 'source-left',
+        targetHandle: isLeftParent ? 'target-left' : 'target-right',
+        weight: 25,
+        animated: false,
+        style: { stroke: '#22c55e', strokeWidth: 2.5, strokeDasharray: '6 4' },
       });
     });
 
-    return sections;
-  }
 
-  function placeDescendants(treeNode: TreeNodeUI, centerX: number, levelY: number) {
-    const memberId = treeNode.member.id;
-    const localHorizontalGap = getHorizontalGap(treeNode);
+  });
 
-    if (processedMembers.has(memberId)) {
-      ensureNode(treeNode, centerX, levelY);
-      return;
-    }
-
-    processedMembers.add(memberId);
-    ensureNode(treeNode, centerX, levelY);
-    const spouseLayout = placeSpouses(treeNode, centerX, levelY, focusDescendantsOnly);
-    const childSections = getChildSections(treeNode, centerX, spouseLayout);
-
-    if (childSections.length === 0 || collapsedMemberIds.has(memberId)) {
-      return;
-    }
-
-    childSections.forEach((section) => {
-      const childY = levelY + VERTICAL_GAP;
-      const clusterGap = Math.min(localHorizontalGap, getChildClusterGap(isMobile));
-      const junctionId = `${section.sectionId}__junction__${memberId}`;
-
-      if (section.children.length > 1) {
-        ensureNexusNode(junctionId, section.anchorX, levelY + CHILD_JUNCTION_Y_OFFSET);
-        ensureEdge(
-          buildEdge(
-            `${section.sourceId}__to__${junctionId}__junction`,
-            section.sourceId,
-            junctionId,
-            "child",
-            "source-bottom-center",
-            "target-top",
-            {
-              type: "smoothstep",
-              pathOptions: { offset: 18, borderRadius: 14 },
-            }
-          )
-        );
-      }
-
-      let cursorX = section.anchorX - ((section.children.length - 1) * clusterGap) / 2;
-
-      section.children.forEach((child, childIndex) => {
-        const childCenterX = cursorX;
-
-        placeDescendants(child, childCenterX, childY);
-        ensureEdge(
-          buildEdge(
-            `${section.sourceId}-${child.member.id}-child`,
-            section.children.length > 1 ? junctionId : section.sourceId,
-            child.member.id,
-            "child",
-            getChildSourceHandle(childIndex, section.children.length),
-            getChildTargetHandle(childIndex, section.children.length),
-            getChildEdgeOverrides(childIndex, section.children.length)
-          )
-        );
-
-        cursorX += clusterGap;
-      });
-    });
-  }
-
-  function placeFocusedTree(treeNode: TreeNodeUI) {
-    const rootX = 0;
-    const rootY = 0;
-    const localHorizontalGap = getHorizontalGap(treeNode);
-    ensureNode(treeNode, rootX, rootY);
-    processedMembers.add(treeNode.member.id);
-    const spouseLayout = placeSpouses(treeNode, rootX, rootY, focusDescendantsOnly);
-    const childSections = getChildSections(treeNode, rootX, spouseLayout);
-
-    let siblingsCount = 0;
-    if (!focusDescendantsOnly) {
-      const sortedParents = [...treeNode.parents].sort(compareTreeNodes);
-      const parentsStartX = rootX - ((sortedParents.length - 1) * localHorizontalGap) / 2;
-      sortedParents.forEach((parent, index) => {
-        const parentX = parentsStartX + index * localHorizontalGap;
-        const parentY = rootY - VERTICAL_GAP;
-        ensureNode(parent, parentX, parentY);
-        ensureEdge(
-          buildEdge(
-            `${parent.member.id}-${treeNode.member.id}-parent`,
-            parent.member.id,
-            treeNode.member.id,
-            "parent",
-            "source-bottom",
-            "target-top"
-          )
-        );
-      });
-
-      const sortedSiblings = [...treeNode.siblings].sort(compareTreeNodes);
-      siblingsCount = sortedSiblings.length;
-      const siblingsY = rootY + VERTICAL_GAP;
-      const siblingSlots = sortedSiblings.length + 1;
-      let siblingIndex = 0;
-      for (let slot = 0; slot < siblingSlots; slot += 1) {
-        if (slot === Math.floor(siblingSlots / 2)) {
-          continue;
-        }
-
-        const sibling = sortedSiblings[siblingIndex];
-        if (!sibling) {
-          continue;
-        }
-
-        const siblingX = rootX + (slot - Math.floor(siblingSlots / 2)) * localHorizontalGap;
-        ensureNode(sibling, siblingX, siblingsY);
-        // Keep sibling nodes visible without connector lines to reduce clutter.
-        siblingIndex += 1;
-      }
-    }
-
-    if (collapsedMemberIds.has(treeNode.member.id)) {
-      return;
-    }
-
-    const descendantsStartY = siblingsCount > 0 ? rootY + VERTICAL_GAP * 2 : rootY + VERTICAL_GAP;
-    childSections.forEach((section) => {
-      const clusterGap = Math.min(localHorizontalGap, getChildClusterGap(isMobile));
-      const junctionId = `${section.sectionId}__junction__root`;
-
-      if (section.children.length > 1) {
-        ensureNexusNode(junctionId, section.anchorX, rootY + CHILD_JUNCTION_Y_OFFSET);
-        ensureEdge(
-          buildEdge(
-            `${section.sourceId}__to__${junctionId}__junction__root`,
-            section.sourceId,
-            junctionId,
-            "child",
-            "source-bottom-center",
-            "target-top",
-            {
-              type: "smoothstep",
-              pathOptions: { offset: 18, borderRadius: 14 },
-            }
-          )
-        );
-      }
-
-      let cursorX = section.anchorX - ((section.children.length - 1) * clusterGap) / 2;
-
-      section.children.forEach((child, childIndex) => {
-        const childCenterX = cursorX;
-        placeDescendants(child, childCenterX, descendantsStartY);
-        ensureEdge(
-          buildEdge(
-            `${section.sourceId}-${child.member.id}-child-root`,
-            section.children.length > 1 ? junctionId : section.sourceId,
-            child.member.id,
-            "child",
-            getChildSourceHandle(childIndex, section.children.length),
-            getChildTargetHandle(childIndex, section.children.length),
-            getChildEdgeOverrides(childIndex, section.children.length)
-          )
-        );
-        cursorX += clusterGap;
-      });
-    });
-  }
-
-  if (node) {
-    placeFocusedTree(node);
-  }
-
-  const rawNodes = Array.from(nodeMap.values());
-  const rawEdges = Array.from(edgeMap.values());
-
-  return { nodes: rawNodes, edges: rawEdges };
+  return { nodes, edges };
 }
 
-function FamilyTreeFlowCanvas({
+function FamilyTreeVisualizationInner({
   treeData,
   loading = false,
   familyName,
   onRefresh,
+  focusDescendantsOnly = false,
 }: FamilyTreeVisualizationProps) {
   const [collapsedMemberIds, setCollapsedMemberIds] = useState<Set<string>>(new Set());
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [isMobile, setIsMobile] = useState(false);
-  const [isPortrait, setIsPortrait] = useState(false);
   const [isNarrowMobile, setIsNarrowMobile] = useState(false);
-  const [showExtendedMobile, setShowExtendedMobile] = useState(false);
   const [showDesktopSimplified, setShowDesktopSimplified] = useState(false);
-  const { fitView, zoomIn, zoomOut } = useReactFlow();
   const denseTreeNodeCount = countTreeNodes(treeData);
   const isDenseTree = denseTreeNodeCount >= DENSE_TREE_NODE_THRESHOLD;
 
-  // Monitor viewport + orientation with matchMedia for reliable mobile rotation updates
   useEffect(() => {
-    if (typeof window === "undefined") {
+    if (typeof window === 'undefined') {
       return;
     }
 
-    const widthQuery = window.matchMedia("(max-width: 767px)");
-    const narrowWidthQuery = window.matchMedia("(max-width: 430px)");
-    const orientationQuery = window.matchMedia("(orientation: portrait)");
+    const widthQuery = window.matchMedia('(max-width: 767px)');
+    const narrowWidthQuery = window.matchMedia('(max-width: 430px)');
 
     const syncLayoutMode = () => {
       setIsMobile(widthQuery.matches);
       setIsNarrowMobile(narrowWidthQuery.matches);
-      setIsPortrait(orientationQuery.matches);
     };
 
     syncLayoutMode();
-    widthQuery.addEventListener("change", syncLayoutMode);
-    narrowWidthQuery.addEventListener("change", syncLayoutMode);
-    orientationQuery.addEventListener("change", syncLayoutMode);
+    widthQuery.addEventListener('change', syncLayoutMode);
+    narrowWidthQuery.addEventListener('change', syncLayoutMode);
 
     return () => {
-      widthQuery.removeEventListener("change", syncLayoutMode);
-      narrowWidthQuery.removeEventListener("change", syncLayoutMode);
-      orientationQuery.removeEventListener("change", syncLayoutMode);
+      widthQuery.removeEventListener('change', syncLayoutMode);
+      narrowWidthQuery.removeEventListener('change', syncLayoutMode);
     };
   }, []);
-
-  const handleFitView = useCallback(() => {
-    const padding = isMobile ? (isNarrowMobile ? 0.34 : 0.26) : 0.15;
-    fitView({ padding, duration: 300 });
-  }, [fitView, isMobile, isNarrowMobile]);
 
   const handleToggleCollapse = (memberId: string) => {
     setCollapsedMemberIds((previous) => {
@@ -1040,13 +1075,9 @@ function FamilyTreeFlowCanvas({
     });
   };
 
-  const handleToggleMobileDetailMode = () => {
-    setShowExtendedMobile((previous) => !previous);
-  };
-
-  const handleToggleDesktopSimplified = () => {
+  const handleToggleDesktopSimplified = useCallback(() => {
     setShowDesktopSimplified((previous) => !previous);
-  };
+  }, []);
 
   useEffect(() => {
     if (isMobile) {
@@ -1058,30 +1089,31 @@ function FamilyTreeFlowCanvas({
 
   useEffect(() => {
     if (treeData && !loading) {
-      const { nodes: rawNodes, edges: rawEdges } = convertTreeToGraph(
+      const { members, relationships, spouses, spouseLinks } = extractMembersAndRelationshipsFromTree(
         treeData,
-        familyName,
-        onRefresh,
         collapsedMemberIds,
-        handleToggleCollapse,
-        isMobile,
-        isNarrowMobile,
-        showExtendedMobile,
-        !isMobile && showDesktopSimplified
+        focusDescendantsOnly
       );
 
-      // Use dagre for stable non-overlapping placement.
-      const newNodes = applyDagreLayout(rawNodes, rawEdges, {
-        isMobile,
-        isPortrait,
-        isNarrowMobile,
-        forceDescendantsOnly: !isMobile && showDesktopSimplified,
-      });
+      const { nodes: rawNodes, edges: rawEdges } = transformDataToElements(
+        members,
+        relationships,
+        {
+          familyName,
+          onRefresh,
+          isMobile,
+          isCompactMobile: isNarrowMobile,
+          collapsedMemberIds,
+          onToggleCollapse: handleToggleCollapse,
+          spouses,
+          spouseLinks,
+        }
+      );
 
-      setNodes(newNodes);
-      setEdges(rawEdges);
-      const padding = isMobile ? (isNarrowMobile ? 0.34 : 0.26) : 0.15;
-      setTimeout(() => fitView({ padding }), 120);
+      const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(rawNodes, rawEdges);
+
+      setNodes(layoutedNodes);
+      setEdges(layoutedEdges);
     }
   }, [
     treeData,
@@ -1090,21 +1122,18 @@ function FamilyTreeFlowCanvas({
     onRefresh,
     collapsedMemberIds,
     isMobile,
-    isPortrait,
     isNarrowMobile,
-    showExtendedMobile,
     showDesktopSimplified,
+    focusDescendantsOnly,
     setNodes,
     setEdges,
-    fitView,
   ]);
 
   if (loading) {
     return (
-      <div className="w-full h-screen flex items-center justify-center bg-slate-900">
-        <div className="text-slate-400">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
-          جاري تحميل شجرة العائلة...
+      <div style={{ width: '100%', height: '100%', minHeight: 320, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center', color: '#94a3b8' }}>
+          <p>جاري تحميل الشجرة...</p>
         </div>
       </div>
     );
@@ -1112,16 +1141,14 @@ function FamilyTreeFlowCanvas({
 
   if (!treeData || nodes.length === 0) {
     return (
-      <div className="w-full h-screen flex items-center justify-center bg-slate-900">
-        <div className="text-center text-slate-400">
-          <p>لم يتم اختيار فرد أو أن بيانات الشجرة غير متاحة</p>
-        </div>
+      <div style={{ width: '100%', height: '100%', minHeight: 320, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ color: '#94a3b8' }}>لا تتوفر بيانات شجرة حالياً</p>
       </div>
     );
   }
 
   return (
-    <div className="w-full h-screen bg-slate-900">
+    <div style={{ width: '100%', height: '100%', minHeight: 320, position: 'relative' }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -1131,107 +1158,56 @@ function FamilyTreeFlowCanvas({
         fitView
         panOnScroll
         panOnDrag
-        zoomOnPinch
         selectionOnDrag={false}
-        minZoom={0.05}
-        maxZoom={2}
-        defaultEdgeOptions={{
-          type: "smoothstep",
-          zIndex: 1,
-        }}
+        zoomOnScroll={false}
+        minZoom={0.03}
+        maxZoom={3}
       >
-        <Background color="#334155" gap={16} />
+        <Background color="#334155" gap={22} size={1} />
+        <Controls position="bottom-left" showInteractive={false} />
+        <MiniMap
+          position="bottom-right"
+          nodeColor={() => '#6366f1'}
+          maskColor="rgba(0,0,0,0.1)"
+          style={{ width: 180, height: 120 }}
+        />
 
-        {/* Hide default controls on mobile — we have our own panel */}
-        {!isMobile && <Controls />}
         {!isMobile && (
-          <MiniMap
-            nodeColor={() => "#6366f1"}
-            nodeStrokeColor={() => "#1e293b"}
-            nodeBorderRadius={8}
-            maskColor="rgba(0, 0, 0, 0.5)"
-          />
-        )}
-
-        {/* Legend — hidden on mobile to save space */}
-        {!isMobile && (
-          <div className="absolute bottom-4 right-4 bg-slate-800/95 border border-slate-700 rounded-lg p-3 md:p-4 text-sm max-w-52">
-            <h4 className="text-white font-semibold mb-3">المفتاح</h4>
-            <div className="space-y-2 text-slate-300">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-blue-500 rounded"></div>
-                <span>علاقة أب/أم</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-green-500 rounded"></div>
-                <span>علاقة ابن/ابنة</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-amber-500 rounded"></div>
-                <span>أخ/أخت</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-purple-500 rounded"></div>
-                <span>علاقة زواج</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Floating control panel — always visible, critical for mobile */}
-        <Panel position="bottom-center">
-          <div className="flex items-center gap-2 bg-slate-800/95 border border-slate-700 rounded-full px-4 py-2 shadow-xl backdrop-blur-sm mb-3">
-            <button
-              onClick={() => zoomIn({ duration: 200 })}
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-slate-700 hover:bg-slate-600 text-white text-xl font-bold transition"
-              title="تكبير"
-            >
-              +
-            </button>
-            <button
-              onClick={handleFitView}
-              className="px-3 h-9 flex items-center justify-center rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition"
-              title="ملاءمة الشاشة"
-            >
-              ملاءمة
-            </button>
-            <button
-              onClick={() => zoomOut({ duration: 200 })}
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-slate-700 hover:bg-slate-600 text-white text-xl font-bold transition"
-              title="تصغير"
-            >
-              −
-            </button>
-            {isMobile && (
-              <button
-                onClick={handleToggleMobileDetailMode}
-                className={`px-3 h-9 flex items-center justify-center rounded-full text-xs font-semibold transition ${
-                  showExtendedMobile
-                    ? "bg-amber-600 hover:bg-amber-500 text-white"
-                    : "bg-emerald-600 hover:bg-emerald-500 text-white"
-                }`}
-                title={showExtendedMobile ? "العرض الكامل مفعل" : "العرض المبسط مفعل"}
-              >
-                {showExtendedMobile ? "عرض كامل" : "عرض مبسط"}
-              </button>
-            )}
-            {!isMobile && (
+          <Panel position="bottom-center">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderRadius: 8, background: 'rgba(15,23,42,0.8)', border: '1px solid #334155', padding: '8px 12px' }}>
               <button
                 onClick={handleToggleDesktopSimplified}
-                className={`px-3 h-9 flex items-center justify-center rounded-full text-xs font-semibold transition ${
-                  showDesktopSimplified
-                    ? "bg-emerald-600 hover:bg-emerald-500 text-white"
-                    : "bg-slate-700 hover:bg-slate-600 text-white"
-                }`}
-                title={showDesktopSimplified ? "العرض المبسط مفعل للشجرة الكبيرة" : "تفعيل العرض المبسط للشجرة الكبيرة"}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: 4,
+                  background: showDesktopSimplified ? '#059669' : '#334155',
+                  color: '#f1f5f9',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                }}
+                title={showDesktopSimplified ? 'عرض مبسط مفعل للشجرة الكبيرة' : 'تفعيل العرض المبسط للشجرة الكبيرة'}
               >
-                {showDesktopSimplified
-                  ? `عرض مبسط (${denseTreeNodeCount})`
-                  : `عرض كامل (${denseTreeNodeCount})`}
+                {showDesktopSimplified ? `عرض مبسط (${denseTreeNodeCount})` : `عرض كامل (${denseTreeNodeCount})`}
+              </button>
+            </div>
+          </Panel>
+        )}
+
+        {(familyName || onRefresh) && (
+          <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, display: 'flex', alignItems: 'center', gap: 8, borderRadius: 8, background: 'rgba(15,23,42,0.8)', border: '1px solid #334155', padding: '8px 12px', color: '#f1f5f9' }}>
+            {familyName && <span style={{ fontSize: 14, fontWeight: 500 }}>{familyName}</span>}
+            {onRefresh && (
+              <button
+                type="button"
+                onClick={onRefresh}
+                style={{ fontSize: 12, padding: '4px 8px', borderRadius: 4, background: '#334155', color: '#f1f5f9', border: 'none', cursor: 'pointer' }}
+              >
+                تحديث
               </button>
             )}
           </div>
-        </Panel>
+        )}
       </ReactFlow>
     </div>
   );
@@ -1240,7 +1216,7 @@ function FamilyTreeFlowCanvas({
 export default function FamilyTreeVisualization(props: FamilyTreeVisualizationProps) {
   return (
     <ReactFlowProvider>
-      <FamilyTreeFlowCanvas {...props} />
+      <FamilyTreeVisualizationInner {...props} />
     </ReactFlowProvider>
   );
 }

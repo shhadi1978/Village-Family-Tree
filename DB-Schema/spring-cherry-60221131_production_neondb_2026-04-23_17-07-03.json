@@ -1,0 +1,266 @@
+[{
+  "table_name": "Family",
+  "column_name": "id",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Family",
+  "column_name": "name",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Family",
+  "column_name": "slug",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Family",
+  "column_name": "description",
+  "data_type": "text",
+  "is_nullable": "YES"
+}, {
+  "table_name": "Family",
+  "column_name": "photoUrl",
+  "data_type": "text",
+  "is_nullable": "YES"
+}, {
+  "table_name": "Family",
+  "column_name": "createdAt",
+  "data_type": "timestamp without time zone",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Family",
+  "column_name": "updatedAt",
+  "data_type": "timestamp without time zone",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Family",
+  "column_name": "villageId",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "FamilyAdmin",
+  "column_name": "id",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "FamilyAdmin",
+  "column_name": "clerkId",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "FamilyAdmin",
+  "column_name": "familyId",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "FamilyAdmin",
+  "column_name": "role",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "FamilyAdmin",
+  "column_name": "createdAt",
+  "data_type": "timestamp without time zone",
+  "is_nullable": "NO"
+}, {
+  "table_name": "FamilyAdmin",
+  "column_name": "updatedAt",
+  "data_type": "timestamp without time zone",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Marriage",
+  "column_name": "id",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Marriage",
+  "column_name": "createdAt",
+  "data_type": "timestamp with time zone",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Marriage",
+  "column_name": "updatedAt",
+  "data_type": "timestamp with time zone",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Marriage",
+  "column_name": "villageId",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Marriage",
+  "column_name": "partnerAId",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Marriage",
+  "column_name": "partnerBId",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Member",
+  "column_name": "id",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Member",
+  "column_name": "firstName",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Member",
+  "column_name": "lastName",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Member",
+  "column_name": "fullName",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Member",
+  "column_name": "gender",
+  "data_type": "USER-DEFINED",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Member",
+  "column_name": "dateOfBirth",
+  "data_type": "timestamp without time zone",
+  "is_nullable": "YES"
+}, {
+  "table_name": "Member",
+  "column_name": "dateOfDeath",
+  "data_type": "timestamp without time zone",
+  "is_nullable": "YES"
+}, {
+  "table_name": "Member",
+  "column_name": "bio",
+  "data_type": "text",
+  "is_nullable": "YES"
+}, {
+  "table_name": "Member",
+  "column_name": "photoUrl",
+  "data_type": "text",
+  "is_nullable": "YES"
+}, {
+  "table_name": "Member",
+  "column_name": "createdAt",
+  "data_type": "timestamp without time zone",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Member",
+  "column_name": "updatedAt",
+  "data_type": "timestamp without time zone",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Member",
+  "column_name": "familyId",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Member",
+  "column_name": "villageId",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Member",
+  "column_name": "nickname",
+  "data_type": "text",
+  "is_nullable": "YES"
+}, {
+  "table_name": "Member",
+  "column_name": "isFounder",
+  "data_type": "boolean",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Member",
+  "column_name": "isExternal",
+  "data_type": "boolean",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Member",
+  "column_name": "externalOriginText",
+  "data_type": "text",
+  "is_nullable": "YES"
+}, {
+  "table_name": "Member",
+  "column_name": "externalNotes",
+  "data_type": "text",
+  "is_nullable": "YES"
+}, {
+  "table_name": "Relationship",
+  "column_name": "id",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Relationship",
+  "column_name": "type",
+  "data_type": "USER-DEFINED",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Relationship",
+  "column_name": "createdAt",
+  "data_type": "timestamp without time zone",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Relationship",
+  "column_name": "updatedAt",
+  "data_type": "timestamp without time zone",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Relationship",
+  "column_name": "fromMemberId",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Relationship",
+  "column_name": "toMemberId",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Relationship",
+  "column_name": "villageId",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Relationship",
+  "column_name": "marriageId",
+  "data_type": "text",
+  "is_nullable": "YES"
+}, {
+  "table_name": "Village",
+  "column_name": "id",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Village",
+  "column_name": "name",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Village",
+  "column_name": "slug",
+  "data_type": "text",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Village",
+  "column_name": "description",
+  "data_type": "text",
+  "is_nullable": "YES"
+}, {
+  "table_name": "Village",
+  "column_name": "photoUrl",
+  "data_type": "text",
+  "is_nullable": "YES"
+}, {
+  "table_name": "Village",
+  "column_name": "createdAt",
+  "data_type": "timestamp without time zone",
+  "is_nullable": "NO"
+}, {
+  "table_name": "Village",
+  "column_name": "updatedAt",
+  "data_type": "timestamp without time zone",
+  "is_nullable": "NO"
+}]

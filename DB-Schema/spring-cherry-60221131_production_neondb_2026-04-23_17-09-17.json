@@ -1,0 +1,56 @@
+[{
+  "table_name": "Family",
+  "column_name": "villageId",
+  "foreign_table_name": "Village",
+  "foreign_column_name": "id"
+}, {
+  "table_name": "FamilyAdmin",
+  "column_name": "familyId",
+  "foreign_table_name": "Family",
+  "foreign_column_name": "id"
+}, {
+  "table_name": "Member",
+  "column_name": "familyId",
+  "foreign_table_name": "Family",
+  "foreign_column_name": "id"
+}, {
+  "table_name": "Member",
+  "column_name": "villageId",
+  "foreign_table_name": "Village",
+  "foreign_column_name": "id"
+}, {
+  "table_name": "Relationship",
+  "column_name": "fromMemberId",
+  "foreign_table_name": "Member",
+  "foreign_column_name": "id"
+}, {
+  "table_name": "Relationship",
+  "column_name": "toMemberId",
+  "foreign_table_name": "Member",
+  "foreign_column_name": "id"
+}, {
+  "table_name": "Relationship",
+  "column_name": "villageId",
+  "foreign_table_name": "Village",
+  "foreign_column_name": "id"
+}, {
+  "table_name": "Marriage",
+  "column_name": "villageId",
+  "foreign_table_name": "Village",
+  "foreign_column_name": "id"
+}, {
+  "table_name": "Marriage",
+  "column_name": "partnerAId",
+  "foreign_table_name": "Member",
+  "foreign_column_name": "id"
+}, {
+  "table_name": "Marriage",
+  "column_name": "partnerBId",
+  "foreign_table_name": "Member",
+  "foreign_column_name": "id"
+}, {
+  "table_name": "Relationship",
+  "column_name": "marriageId",
+  "foreign_table_name": "Marriage",
+  "foreign_column_name": "id"
+}]

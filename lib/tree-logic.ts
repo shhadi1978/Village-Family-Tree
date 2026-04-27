@@ -119,6 +119,40 @@ function getSyntheticMarriageGroupId(memberAId: string, memberBId: string) {
   return [memberAId, memberBId].sort().join("__legacy_marriage__");
 }
 
+function safeDateTime(value?: Date | string | null) {
+  if (!value) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp;
+}
+
+function compareMembersForDescOrder(a: MemberRecord, b: MemberRecord) {
+  const birthA = safeDateTime(a.dateOfBirth);
+  const birthB = safeDateTime(b.dateOfBirth);
+  if (birthA !== birthB) {
+    return birthA - birthB;
+  }
+
+  const createdA = safeDateTime(a.createdAt);
+  const createdB = safeDateTime(b.createdAt);
+  if (createdA !== createdB) {
+    return createdA - createdB;
+  }
+
+  const firstNameCmp = String(a.firstName || "").localeCompare(String(b.firstName || ""), "ar");
+  if (firstNameCmp !== 0) {
+    return firstNameCmp;
+  }
+
+  return String(a.fullName || "").localeCompare(String(b.fullName || ""), "ar");
+}
+
+function compareTreeNodesForDescOrder(a: FamilyTreeNode, b: FamilyTreeNode) {
+  return compareMembersForDescOrder(a.member, b.member);
+}
+
 async function fetchShallowSpouseNodes(
   member: MemberWithRelationships,
   visitedIds?: Set<string>
@@ -141,7 +175,7 @@ async function fetchShallowSpouseNodes(
     spouses.push(toShallowTreeNode(spouseMember));
   });
 
-  return spouses;
+  return spouses.sort(compareTreeNodesForDescOrder);
 }
 
 async function buildMarriageGroups(
@@ -243,11 +277,35 @@ async function buildMarriageGroups(
     ])
   );
 
-  return marriageIds.map((marriageId) => ({
+  const groups = marriageIds.map((marriageId) => ({
     marriageId,
     spouse: spouseNodesByMarriageId.get(marriageId) || null,
-    children: childrenByMarriageId.get(marriageId) || [],
+    children: (childrenByMarriageId.get(marriageId) || []).sort(compareTreeNodesForDescOrder),
   }));
+
+  groups.sort((a, b) => {
+    if (a.spouse && b.spouse) {
+      return compareTreeNodesForDescOrder(a.spouse, b.spouse);
+    }
+
+    if (a.spouse && !b.spouse) {
+      return -1;
+    }
+
+    if (!a.spouse && b.spouse) {
+      return 1;
+    }
+
+    const aFirstChild = a.children[0];
+    const bFirstChild = b.children[0];
+    if (aFirstChild && bFirstChild) {
+      return compareTreeNodesForDescOrder(aFirstChild, bFirstChild);
+    }
+
+    return a.marriageId.localeCompare(b.marriageId);
+  });
+
+  return groups;
 }
 
 type TreeViewMode = "FULL" | "DESCENDANTS";
@@ -453,13 +511,13 @@ export async function fetchFamilyTree(
     }
 
     // Separate relationships by type
-    const parentRelationships = member.relationshipsAsTo.filter(
-      (rel) => rel.type === "PARENT"
-    );
+    const parentRelationships = member.relationshipsAsTo
+      .filter((rel) => rel.type === "PARENT")
+      .sort((a, b) => compareMembersForDescOrder(a.fromMember, b.fromMember));
 
-    const childRelationships = member.relationshipsAsFrom.filter(
-      (rel) => rel.type === "PARENT"
-    );
+    const childRelationships = member.relationshipsAsFrom
+      .filter((rel) => rel.type === "PARENT")
+      .sort((a, b) => compareMembersForDescOrder(a.toMember, b.toMember));
 
     const parents: FamilyTreeNode[] =
       mode === "FULL"
@@ -484,9 +542,9 @@ export async function fetchFamilyTree(
         fetchFamilyTree(rel.toMemberId, maxDepth, visitedIds, currentDepth + 1, mode)
       )
     );
-    const allChildNodes: FamilyTreeNode[] = childNodes.filter(
-      (node): node is FamilyTreeNode => !!node
-    );
+    const allChildNodes: FamilyTreeNode[] = childNodes
+      .filter((node): node is FamilyTreeNode => !!node)
+      .sort(compareTreeNodesForDescOrder);
 
     const marriages = await buildMarriageGroups(
       member,
@@ -498,17 +556,20 @@ export async function fetchFamilyTree(
     const groupedChildIds = new Set(
       marriages.flatMap((marriage) => marriage.children.map((child) => child.member.id))
     );
-    const children = allChildNodes.filter(
-      (child) => !groupedChildIds.has(child.member.id)
-    );
+    const children = allChildNodes
+      .filter((child) => !groupedChildIds.has(child.member.id))
+      .sort(compareTreeNodesForDescOrder);
 
     const spouses = marriages
       .map((marriage) => marriage.spouse)
-      .filter((spouse): spouse is FamilyTreeNode => !!spouse);
+      .filter((spouse): spouse is FamilyTreeNode => !!spouse)
+      .sort(compareTreeNodesForDescOrder);
+
+    const sortedParents = parents.sort(compareTreeNodesForDescOrder);
 
     return {
       member,
-      parents,
+      parents: sortedParents,
       siblings: [],
       children,
       spouses,
@@ -520,6 +581,8 @@ export async function fetchFamilyTree(
     return null;
   }
 }
+
+export default fetchFamilyTree;
 
 async function fetchSiblingNodes(
   member: MemberWithRelationships

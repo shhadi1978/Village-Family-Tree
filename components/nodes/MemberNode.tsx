@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Handle, Position } from "reactflow";
+import { Handle, Position } from "@xyflow/react";
 import { ChevronDown, ChevronUp, User } from "lucide-react";
 import { formatDateAr } from "@/lib/i18n/format";
 import { getMemberDisplayName } from "@/lib/member-display";
@@ -101,24 +101,24 @@ export default function MemberNode({ data }: MemberNodeProps) {
           founder ? "founder-node-card" : memberCardTone
         }`}
       >
-        <Handle id="target-top" type="target" position={Position.Top} />
-        <Handle id="target-top-far-left" type="target" position={Position.Top} style={{ left: "18%" }} />
-        <Handle id="target-top-left" type="target" position={Position.Top} style={{ left: "34%" }} />
-        <Handle id="target-top-center" type="target" position={Position.Top} style={{ left: "50%" }} />
-        <Handle id="target-top-right" type="target" position={Position.Top} style={{ left: "66%" }} />
-        <Handle id="target-top-far-right" type="target" position={Position.Top} style={{ left: "82%" }} />
-        <Handle id="source-top" type="source" position={Position.Top} />
-        <Handle id="target-right" type="target" position={Position.Right} />
-        <Handle id="source-right" type="source" position={Position.Right} />
-        <Handle id="target-bottom" type="target" position={Position.Bottom} />
-        <Handle id="source-bottom" type="source" position={Position.Bottom} />
-        <Handle id="source-bottom-far-left" type="source" position={Position.Bottom} style={{ left: "18%" }} />
-        <Handle id="source-bottom-left" type="source" position={Position.Bottom} style={{ left: "34%" }} />
-        <Handle id="source-bottom-center" type="source" position={Position.Bottom} style={{ left: "50%" }} />
-        <Handle id="source-bottom-right" type="source" position={Position.Bottom} style={{ left: "66%" }} />
-        <Handle id="source-bottom-far-right" type="source" position={Position.Bottom} style={{ left: "82%" }} />
-        <Handle id="target-left" type="target" position={Position.Left} />
-        <Handle id="source-left" type="source" position={Position.Left} />
+        <Handle id="target-top" type="target" position={Position.Top} style={{ opacity: 0 }} />
+        <Handle id="target-top-far-left" type="target" position={Position.Top} style={{ left: "18%", opacity: 0 }} />
+        <Handle id="target-top-left" type="target" position={Position.Top} style={{ left: "34%", opacity: 0 }} />
+        <Handle id="target-top-center" type="target" position={Position.Top} style={{ left: "50%", opacity: 0 }} />
+        <Handle id="target-top-right" type="target" position={Position.Top} style={{ left: "66%", opacity: 0 }} />
+        <Handle id="target-top-far-right" type="target" position={Position.Top} style={{ left: "82%", opacity: 0 }} />
+        <Handle id="source-top" type="source" position={Position.Top} style={{ opacity: 0 }} />
+        <Handle id="target-right" type="target" position={Position.Right} style={{ opacity: 0 }} />
+        <Handle id="source-right" type="source" position={Position.Right} style={{ opacity: 0 }} />
+        <Handle id="target-bottom" type="target" position={Position.Bottom} style={{ opacity: 0 }} />
+        <Handle id="source-bottom" type="source" position={Position.Bottom} style={{ opacity: 0 }} />
+        <Handle id="source-bottom-far-left" type="source" position={Position.Bottom} style={{ left: "18%", opacity: 0 }} />
+        <Handle id="source-bottom-left" type="source" position={Position.Bottom} style={{ left: "34%", opacity: 0 }} />
+        <Handle id="source-bottom-center" type="source" position={Position.Bottom} style={{ left: "50%", opacity: 0 }} />
+        <Handle id="source-bottom-right" type="source" position={Position.Bottom} style={{ left: "66%", opacity: 0 }} />
+        <Handle id="source-bottom-far-right" type="source" position={Position.Bottom} style={{ left: "82%", opacity: 0 }} />
+        <Handle id="target-left" type="target" position={Position.Left} style={{ opacity: 0 }} />
+        <Handle id="source-left" type="source" position={Position.Left} style={{ opacity: 0 }} />
 
         <div className="flex justify-center mb-2">
           {member.photoUrl ? (
