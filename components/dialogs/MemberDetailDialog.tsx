@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -8,7 +8,7 @@ import { getMemberDisplayName } from "@/lib/member-display";
 import { useRouter } from "next/navigation";
 import { genUploader } from "uploadthing/client";
 
-const { uploadFiles } = genUploader({ url: "/api/uploadthing" });
+const uploadFiles = genUploader({ url: "/api/uploadthing", package: "@uploadthing/react" });
 
 interface Member {
   id: string;
@@ -540,7 +540,7 @@ export default function MemberDetailDialog({
       });
 
       const uploadedFile = uploadedFiles?.[0];
-      const nextPhotoUrl = uploadedFile?.ufsUrl || uploadedFile?.url || uploadedFile?.serverData?.fileUrl;
+      const nextPhotoUrl = uploadedFile?.url || (uploadedFile?.serverData as any)?.fileUrl;
 
       if (!nextPhotoUrl) {
         throw new Error("تعذر الحصول على رابط الصورة بعد الرفع");

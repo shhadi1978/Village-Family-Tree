@@ -10,7 +10,8 @@
     "lint": "next lint",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "build:stable": "set NODE_TLS_REJECT_UNAUTHORIZED=0&& prisma generate && next build"
   },
   "dependencies": {
     "@clerk/nextjs": "^5.7.5",

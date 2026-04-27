@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { memo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
@@ -65,8 +65,8 @@ function getInitialsStyles(member: MemberWithRelationships): string {
   return 'bg-gray-200 text-gray-900';
 }
 
-const MemberNode = memo(function MemberNode({ data }: NodeProps<MemberNodeData>) {
-  const { member, isHighlighted, couplePosition = 'none' } = data;
+const MemberNode = memo(function MemberNode({ data }: NodeProps) {
+  const { member, isHighlighted, couplePosition = 'none' } = data as unknown as MemberNodeData;
 
   return (
     <>
