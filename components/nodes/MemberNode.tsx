@@ -35,6 +35,7 @@ interface MemberNodeProps {
     isCollapsed?: boolean;
     hasDescendants?: boolean;
     isHighlighted?: boolean;
+    isDimmed?: boolean;
     onToggleCollapse?: (memberId: string) => void;
     onFocusMember?: (memberId: string) => void;
   };
@@ -50,6 +51,7 @@ export default function MemberNode({ data }: MemberNodeProps) {
     isCollapsed = false,
     hasDescendants = false,
     isHighlighted = false,
+    isDimmed = false,
     onToggleCollapse,
     onFocusMember,
   } = data;
@@ -109,6 +111,7 @@ export default function MemberNode({ data }: MemberNodeProps) {
     <>
       <div
         onClick={handleNodeClick}
+        style={{ opacity: isDimmed ? 0.3 : 1, transition: 'opacity 0.2s' }}
         className={`relative rounded-lg p-4 shadow-lg transition border-2 cursor-pointer hover:shadow-xl ${
           isCompactMobile ? "w-36 p-3" : isMobile ? "w-44" : "w-64"
         } ${

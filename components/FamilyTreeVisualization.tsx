@@ -1189,6 +1189,8 @@ function FamilyTreeVisualizationInner({
   const [showDesktopSimplified, setShowDesktopSimplified] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMatchCount, setSearchMatchCount] = useState(0);
+  const [searchMatchedIds, setSearchMatchedIds] = useState<string[]>([]);
+  const [searchCurrentIndex, setSearchCurrentIndex] = useState(0);
   const [showStats, setShowStats] = useState(false);
   const [focusedMemberId, setFocusedMemberId] = useState<string | null>(null);
   const { fitView } = useReactFlow();
@@ -1317,13 +1319,14 @@ function FamilyTreeVisualizationInner({
     const q = searchQuery.trim().toLowerCase();
     if (!q) {
       setSearchMatchCount(0);
+      setSearchMatchedIds([]);
+      setSearchCurrentIndex(0);
       setNodes(prev => prev.map(n =>
-        isUnionNodeId(n.id) ? n : { ...n, data: { ...n.data, isHighlighted: false } }
+        isUnionNodeId(n.id) ? n : { ...n, data: { ...n.data, isHighlighted: false, isDimmed: false } }
       ));
       return;
     }
     const matchedIds: string[] = [];
-    // Compute matches first, then apply to nodes
     setNodes(prev => {
       const updated = prev.map(n => {
         if (isUnionNodeId(n.id)) return n;
@@ -1332,23 +1335,36 @@ function FamilyTreeVisualizationInner({
           .filter(Boolean).join(' ').toLowerCase();
         const matches = nameStr.includes(q);
         if (matches && !matchedIds.includes(n.id)) matchedIds.push(n.id);
-        return { ...n, data: { ...n.data, isHighlighted: matches } };
+        return { ...n, data: { ...n.data, isHighlighted: matches, isDimmed: !matches } };
       });
       return updated;
     });
-    // Delay count update so setNodes callback has run
     requestAnimationFrame(() => {
       setSearchMatchCount(matchedIds.length);
+      setSearchMatchedIds(matchedIds);
+      setSearchCurrentIndex(0);
       if (matchedIds.length > 0) {
         fitView({
-          nodes: matchedIds.map(id => ({ id })),
+          nodes: [{ id: matchedIds[0] }],
           duration: 600,
           padding: 0.5,
-          maxZoom: 1.2,
+          maxZoom: 1.5,
         });
       }
     });
   }, [searchQuery, fitView, setNodes]);
+
+  const navigateToResult = useCallback((dir: 1 | -1) => {
+    if (searchMatchedIds.length === 0) return;
+    const next = (searchCurrentIndex + dir + searchMatchedIds.length) % searchMatchedIds.length;
+    setSearchCurrentIndex(next);
+    fitView({
+      nodes: [{ id: searchMatchedIds[next] }],
+      duration: 500,
+      padding: 0.4,
+      maxZoom: 1.5,
+    });
+  }, [searchMatchedIds, searchCurrentIndex, fitView]);
 
   useEffect(() => {
     if (isMobile) {
@@ -1508,12 +1524,36 @@ function FamilyTreeVisualizationInner({
             </div>
             {searchQuery.trim() && (
               <div style={{
-                fontSize: 11,
-                color: searchMatchCount > 0 ? '#4ade80' : '#f87171',
-                textAlign: 'right',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: searchMatchCount > 0 ? 'space-between' : 'flex-end',
                 direction: 'rtl',
+                marginTop: 2,
               }}>
-                {searchMatchCount > 0 ? `${searchMatchCount} نتيجة` : 'لا توجد نتائج'}
+                <span style={{
+                  fontSize: 11,
+                  color: searchMatchCount > 0 ? '#4ade80' : '#f87171',
+                }}>
+                  {searchMatchCount > 0 ? `${searchCurrentIndex + 1} / ${searchMatchCount}` : 'لا توجد نتائج'}
+                </span>
+                {searchMatchCount > 1 && (
+                  <div style={{ display: 'flex', gap: 2 }}>
+                    <button
+                      onClick={() => navigateToResult(-1)}
+                      title="السابق"
+                      style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '1px 4px', borderRadius: 4 }}
+                      onMouseEnter={e => (e.currentTarget.style.color = '#e2e8f0')}
+                      onMouseLeave={e => (e.currentTarget.style.color = '#94a3b8')}
+                    >›</button>
+                    <button
+                      onClick={() => navigateToResult(1)}
+                      title="التالي"
+                      style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '1px 4px', borderRadius: 4 }}
+                      onMouseEnter={e => (e.currentTarget.style.color = '#e2e8f0')}
+                      onMouseLeave={e => (e.currentTarget.style.color = '#94a3b8')}
+                    >‹</button>
+                  </div>
+                )}
               </div>
             )}
             {/* Exit focus mode banner */}
