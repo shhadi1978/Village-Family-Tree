@@ -1483,11 +1483,12 @@ function FamilyTreeVisualizationInner({
             background: 'rgba(15,23,42,0.92)',
             border: '1px solid #334155',
             borderRadius: 10,
-            padding: '8px 12px',
+            padding: isMobile ? '6px 8px' : '8px 12px',
             display: 'flex',
             flexDirection: 'column',
             gap: 4,
-            minWidth: isMobile ? 160 : 220,
+            minWidth: isMobile ? 120 : 220,
+            maxWidth: isMobile ? 160 : 280,
             boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, direction: 'rtl' }}>
@@ -1497,7 +1498,7 @@ function FamilyTreeVisualizationInner({
               </svg>
               <input
                 type="text"
-                placeholder="ابحث عن فرد..."
+                placeholder={isMobile ? 'بحث...' : 'ابحث عن فرد...'}
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 style={{
@@ -1505,11 +1506,12 @@ function FamilyTreeVisualizationInner({
                   border: 'none',
                   outline: 'none',
                   color: '#f1f5f9',
-                  fontSize: 13,
+                  fontSize: isMobile ? 12 : 13,
                   flex: 1,
                   direction: 'rtl',
                   fontFamily: 'inherit',
                   minWidth: 0,
+                  width: isMobile ? 70 : 'auto',
                 }}
               />
               {searchQuery && (
@@ -1603,8 +1605,8 @@ function FamilyTreeVisualizationInner({
           <Panel position="top-right">
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, direction: 'rtl' }}>
               {/* Family name + refresh + stats toggle */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderRadius: 8, background: 'rgba(15,23,42,0.9)', border: '1px solid #334155', padding: '8px 12px', color: '#f1f5f9' }}>
-                {familyName && <span style={{ fontSize: 14, fontWeight: 600 }}>{familyName}</span>}
+              <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8, borderRadius: 8, background: 'rgba(15,23,42,0.9)', border: '1px solid #334155', padding: isMobile ? '6px 8px' : '8px 12px', color: '#f1f5f9' }}>
+                {familyName && <span style={{ fontSize: isMobile ? 12 : 14, fontWeight: 600, maxWidth: isMobile ? 80 : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{familyName}</span>}
                 {onRefresh && (
                   <button
                     type="button"
@@ -1618,13 +1620,13 @@ function FamilyTreeVisualizationInner({
                   <button
                     type="button"
                     onClick={() => setShowStats(s => !s)}
-                    style={{ fontSize: 12, padding: '4px 8px', borderRadius: 4, background: showStats ? '#4f46e5' : '#334155', color: '#f1f5f9', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                    style={{ fontSize: 12, padding: isMobile ? '4px 6px' : '4px 8px', borderRadius: 4, background: showStats ? '#4f46e5' : '#334155', color: '#f1f5f9', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
                     title="إحصاءات الشجرة"
                   >
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
                     </svg>
-                    إحصاءات
+                    {!isMobile && 'إحصاءات'}
                   </button>
                 )}
               </div>
@@ -1635,10 +1637,10 @@ function FamilyTreeVisualizationInner({
                   background: 'rgba(15,23,42,0.96)',
                   border: '1px solid #334155',
                   borderRadius: 10,
-                  padding: '14px 16px',
+                  padding: isMobile ? '10px 10px' : '14px 16px',
                   color: '#f1f5f9',
-                  minWidth: 220,
-                  maxWidth: 260,
+                  minWidth: isMobile ? 160 : 220,
+                  maxWidth: isMobile ? 190 : 260,
                   boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
                   direction: 'rtl',
                 }}>
@@ -1647,7 +1649,7 @@ function FamilyTreeVisualizationInner({
                   </div>
 
                   {/* Grid of key stats */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px', marginBottom: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: isMobile ? '6px 8px' : '8px 12px', marginBottom: isMobile ? 8 : 12 }}>
                     {[
                       { label: 'إجمالي الأفراد', value: treeStats.totalCount, color: '#818cf8' },
                       { label: 'عدد الأجيال', value: treeStats.generationsCount, color: '#34d399' },
@@ -1656,9 +1658,9 @@ function FamilyTreeVisualizationInner({
                       { label: 'المتوفون', value: treeStats.deceasedCount, color: '#f87171' },
                       { label: 'من خارج القرية', value: treeStats.externalCount, color: '#fbbf24' },
                     ].map(stat => (
-                      <div key={stat.label} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 6, padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <span style={{ fontSize: 18, fontWeight: 700, color: stat.color, lineHeight: 1 }}>{stat.value}</span>
-                        <span style={{ fontSize: 10, color: '#94a3b8', lineHeight: 1.2 }}>{stat.label}</span>
+                      <div key={stat.label} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 6, padding: isMobile ? '4px 6px' : '6px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <span style={{ fontSize: isMobile ? 15 : 18, fontWeight: 700, color: stat.color, lineHeight: 1 }}>{stat.value}</span>
+                        <span style={{ fontSize: isMobile ? 9 : 10, color: '#94a3b8', lineHeight: 1.2 }}>{stat.label}</span>
                       </div>
                     ))}
                   </div>
