@@ -8,7 +8,7 @@ import { getMemberDisplayName } from "@/lib/member-display";
 import { isFamilyFounder } from "@/lib/member-founder";
 import { sortMembersByLineage } from "@/lib/member-lineage-sort";
 import dynamic from "next/dynamic";
-import { ArrowLeft, Home } from "lucide-react";
+import { ArrowLeft, Home, ChevronUp, ChevronDown, Users } from "lucide-react";
 import Link from "next/link";
 
 type MemberSortMode = "SEQUENCE" | "ALPHABETICAL" | "LINEAGE";
@@ -69,6 +69,7 @@ function FamilyTreePageContent() {
   const [treeLoading, setTreeLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [treeReloadTick, setTreeReloadTick] = useState(0);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const treeCacheRef = useRef<Record<string, any>>({});
   const lastHandledReloadTickRef = useRef(0);
 
@@ -236,13 +237,24 @@ function FamilyTreePageContent() {
           </div>
           <Link href="/" className="flex items-center gap-2 text-slate-400 hover:text-white transition">
             <Home className="w-5 h-5" />
-            <span>الرئيسية</span>
+            <span className="hidden sm:inline">الرئيسية</span>
           </Link>
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(o => !o)}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm transition"
+            title={sidebarOpen ? 'إخفاء قائمة الأفراد' : 'إظهار قائمة الأفراد'}
+          >
+            <Users className="w-4 h-4" />
+            <span className="hidden sm:inline">{sidebarOpen ? 'إخفاء الأفراد' : 'إظهار الأفراد'}</span>
+            {sidebarOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
         </div>
       </header>
 
       <div className="flex flex-col lg:flex-row" style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
         {/* Sidebar */}
+        {sidebarOpen && (
         <aside
           className="w-full h-[40dvh] lg:h-auto lg:w-72 bg-slate-800 lg:border-l border-slate-700 overflow-y-auto"
           style={{ flexShrink: 0, maxHeight: '100%' }}
@@ -330,6 +342,7 @@ function FamilyTreePageContent() {
             )}
           </div>
         </aside>
+        )}
 
         {/* Main - Tree */}
         <main style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
