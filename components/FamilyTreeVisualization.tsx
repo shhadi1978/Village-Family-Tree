@@ -1322,7 +1322,7 @@ function FamilyTreeVisualizationInner({
           familyName,
           onRefresh,
           isMobile,
-          isCompactMobile: isNarrowMobile,
+          isCompactMobile: isNarrowMobile || showDesktopSimplified,
           collapsedMemberIds,
           onToggleCollapse: handleToggleCollapse,
           spouses,
