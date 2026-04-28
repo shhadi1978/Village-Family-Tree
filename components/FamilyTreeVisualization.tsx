@@ -464,20 +464,36 @@ function getLayoutedElements(inputNodes: Node[], inputEdges: FlowEdge[]) {
     });
   });
 
-  // ─── Fourth pass: per-generation overlap resolution (couple-aware atoms) ──
-  // A couple (left spouse + right spouse + union dot) is treated as one indivisible
-  // "atom" that moves together.  Atoms within the same generation row are sorted by
-  // their left edge and then forward-swept so no two atoms overlap.
+  // ─── Fourth pass: per-generation overlap resolution with cascade ───────────
+  // Each couple (left spouse + right spouse + union dot) is treated as one
+  // indivisible "atom".  Atoms within the same generation are sorted by their left
+  // edge and forward-swept so no two atoms overlap.
+  // CRITICAL: when an atom is shifted, ALL of its descendants are cascade-shifted
+  // by the same delta so children never become misaligned from their parents.
   type Atom = { leftX: number; rightX: number; nodeIds: string[] };
   const atomsByGen = new Map<number, Atom[]>();
   const assignedToAtom = new Set<string>();
   const MIN_ATOM_GAP = 30;
 
-  // Couple atoms (two parents + union node)
+  // Helper: recursively shift a node and all its descendants downward in the tree
+  const cascadeShiftDown = (nodeId: string, delta: number, visited: Set<string>): void => {
+    if (visited.has(nodeId) || Math.abs(delta) < 0.5) return;
+    visited.add(nodeId);
+    const cpos = positions.get(nodeId);
+    if (cpos) positions.set(nodeId, { x: cpos.x + delta, y: cpos.y });
+    if (isUnionNodeId(nodeId)) {
+      // Union → cascade to its children (members going downward)
+      (childrenByUnion.get(nodeId) ?? []).forEach(cid => cascadeShiftDown(cid, delta, visited));
+    } else {
+      // Member → cascade to unions where this member is a PARENT (their own couples/children)
+      (ownUnionsOf.get(nodeId) ?? []).forEach(uid => cascadeShiftDown(uid, delta, visited));
+    }
+  };
+
+  // Build couple atoms (two parents + union node per couple)
   allUnionIds.forEach(uid => {
     const parents = parentsByUnion.get(uid) ?? [];
     if (parents.length < 2) return;
-    // If either parent already belongs to a prior atom, skip to avoid double-counting.
     if (assignedToAtom.has(parents[0]) || assignedToAtom.has(parents[1])) return;
     const posA = positions.get(parents[0]);
     const posB = positions.get(parents[1]);
@@ -496,7 +512,7 @@ function getLayoutedElements(inputNodes: Node[], inputEdges: FlowEdge[]) {
     assignedToAtom.add(parents[1]);
   });
 
-  // Solo-member atoms (leaf nodes, single-parent children, etc.)
+  // Build solo-member atoms (leaf nodes, single-parent children, etc.)
   inputNodes.forEach(n => {
     if (isUnionNodeId(n.id) || assignedToAtom.has(n.id)) return;
     const pos = positions.get(n.id);
@@ -510,9 +526,28 @@ function getLayoutedElements(inputNodes: Node[], inputEdges: FlowEdge[]) {
     });
   });
 
-  // Forward sweep per generation: push overlapping atoms apart
-  atomsByGen.forEach(atoms => {
+  // Process generations top-down so cascade shifts from a shallow generation are
+  // reflected in atom boundaries before the deeper generation is swept.
+  const sortedGens = [...atomsByGen.keys()].sort((a, b) => a - b);
+  sortedGens.forEach(gen => {
+    const atoms = atomsByGen.get(gen)!;
     if (atoms.length < 2) return;
+
+    // Re-sync each atom's boundaries from the ACTUAL current positions.
+    // A cascade from the parent generation may already have shifted some atoms.
+    atoms.forEach(atom => {
+      const memberIds = atom.nodeIds.filter(id => !isUnionNodeId(id));
+      if (memberIds.length === 0) return;
+      let minX = Infinity, maxX = -Infinity;
+      memberIds.forEach(id => {
+        const p = positions.get(id);
+        if (!p) return;
+        minX = Math.min(minX, p.x);
+        maxX = Math.max(maxX, p.x + sizeOf(id).width);
+      });
+      if (minX < Infinity) { atom.leftX = minX; atom.rightX = maxX; }
+    });
+
     atoms.sort((a, b) => a.leftX - b.leftX);
     let rightBound = atoms[0].rightX;
     for (let i = 1; i < atoms.length; i++) {
@@ -520,10 +555,25 @@ function getLayoutedElements(inputNodes: Node[], inputEdges: FlowEdge[]) {
       const needed = rightBound + MIN_ATOM_GAP;
       if (atom.leftX < needed) {
         const delta = needed - atom.leftX;
+        const cascadeVisited = new Set<string>(atom.nodeIds);
+
+        // Shift the atom's own nodes
         atom.nodeIds.forEach(id => {
           const pos = positions.get(id);
           if (pos) positions.set(id, { x: pos.x + delta, y: pos.y });
         });
+
+        // Cascade the shift to ALL descendants so children stay below their parents
+        atom.nodeIds.forEach(id => {
+          if (isUnionNodeId(id)) {
+            (childrenByUnion.get(id) ?? []).forEach(cid =>
+              cascadeShiftDown(cid, delta, cascadeVisited));
+          } else {
+            (ownUnionsOf.get(id) ?? []).forEach(uid =>
+              cascadeShiftDown(uid, delta, cascadeVisited));
+          }
+        });
+
         atom.leftX += delta;
         atom.rightX += delta;
       }
@@ -531,7 +581,7 @@ function getLayoutedElements(inputNodes: Node[], inputEdges: FlowEdge[]) {
     }
   });
 
-  // Re-anchor single-parent union nodes if their parent was shifted by atom sweep
+  // Re-anchor single-parent union nodes if their parent was shifted
   allUnionIds.forEach(uid => {
     const parents = parentsByUnion.get(uid) ?? [];
     if (parents.length !== 1) return;
