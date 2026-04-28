@@ -34,6 +34,7 @@ interface MemberNodeProps {
     isCompactMobile?: boolean;
     isCollapsed?: boolean;
     hasDescendants?: boolean;
+    isHighlighted?: boolean;
     onToggleCollapse?: (memberId: string) => void;
   };
 }
@@ -47,6 +48,7 @@ export default function MemberNode({ data }: MemberNodeProps) {
     isCompactMobile = false,
     isCollapsed = false,
     hasDescendants = false,
+    isHighlighted = false,
     onToggleCollapse,
   } = data;
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
@@ -102,6 +104,10 @@ export default function MemberNode({ data }: MemberNodeProps) {
         onClick={handleNodeClick}
         className={`relative rounded-lg p-4 shadow-lg transition border-2 cursor-pointer hover:shadow-xl ${
           isCompactMobile ? "w-36 p-3" : isMobile ? "w-44" : "w-64"
+        } ${
+          isHighlighted
+            ? "ring-4 ring-yellow-400 ring-offset-1 shadow-[0_0_24px_4px_rgba(250,204,21,0.55)]"
+            : ""
         } ${
           founder ? "founder-node-card" : memberCardTone
         }`}

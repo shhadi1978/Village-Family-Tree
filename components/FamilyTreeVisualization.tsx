@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Background,
   Controls,
@@ -9,6 +9,7 @@ import {
   ReactFlowProvider,
   useEdgesState,
   useNodesState,
+  useReactFlow,
   MarkerType,
   Panel,
   Position,
@@ -1141,6 +1142,9 @@ function FamilyTreeVisualizationInner({
   const [isMobile, setIsMobile] = useState(false);
   const [isNarrowMobile, setIsNarrowMobile] = useState(false);
   const [showDesktopSimplified, setShowDesktopSimplified] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchMatchCount, setSearchMatchCount] = useState(0);
+  const { fitView } = useReactFlow();
   const denseTreeNodeCount = countTreeNodes(treeData);
   const isDenseTree = denseTreeNodeCount >= DENSE_TREE_NODE_THRESHOLD;
 
@@ -1182,6 +1186,39 @@ function FamilyTreeVisualizationInner({
   const handleToggleDesktopSimplified = useCallback(() => {
     setShowDesktopSimplified((previous) => !previous);
   }, []);
+
+  // ─── Search & Highlight ────────────────────────────────────────────────────
+  useEffect(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) {
+      setSearchMatchCount(0);
+      setNodes(prev => prev.map(n =>
+        isUnionNodeId(n.id) ? n : { ...n, data: { ...n.data, isHighlighted: false } }
+      ));
+      return;
+    }
+    const matchedIds: string[] = [];
+    setNodes(prev => prev.map(n => {
+      if (isUnionNodeId(n.id)) return n;
+      const m = (n.data as any).member as TreeMemberUI;
+      const nameStr = [m.fullName, m.firstName, m.lastName, m.nickname]
+        .filter(Boolean).join(' ').toLowerCase();
+      const matches = nameStr.includes(q);
+      if (matches) matchedIds.push(n.id);
+      return { ...n, data: { ...n.data, isHighlighted: matches } };
+    }));
+    setSearchMatchCount(matchedIds.length);
+    if (matchedIds.length > 0) {
+      requestAnimationFrame(() => {
+        fitView({
+          nodes: matchedIds.map(id => ({ id })),
+          duration: 600,
+          padding: 0.5,
+          maxZoom: 1.2,
+        });
+      });
+    }
+  }, [searchQuery, fitView, setNodes]);
 
   useEffect(() => {
     if (isMobile) {
@@ -1276,6 +1313,64 @@ function FamilyTreeVisualizationInner({
           maskColor="rgba(0,0,0,0.1)"
           style={{ width: 180, height: 120 }}
         />
+
+        {/* ── Search Panel ── */}
+        <Panel position="top-left">
+          <div style={{
+            background: 'rgba(15,23,42,0.92)',
+            border: '1px solid #334155',
+            borderRadius: 10,
+            padding: '8px 12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            minWidth: isMobile ? 160 : 220,
+            boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, direction: 'rtl' }}>
+              {/* search icon */}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input
+                type="text"
+                placeholder="ابحث عن فرد..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  color: '#f1f5f9',
+                  fontSize: 13,
+                  flex: 1,
+                  direction: 'rtl',
+                  fontFamily: 'inherit',
+                  minWidth: 0,
+                }}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  style={{ color: '#64748b', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0 }}
+                  title="مسح البحث"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            {searchQuery.trim() && (
+              <div style={{
+                fontSize: 11,
+                color: searchMatchCount > 0 ? '#4ade80' : '#f87171',
+                textAlign: 'right',
+                direction: 'rtl',
+              }}>
+                {searchMatchCount > 0 ? `${searchMatchCount} نتيجة` : 'لا توجد نتائج'}
+              </div>
+            )}
+          </div>
+        </Panel>
 
         {!isMobile && (
           <Panel position="bottom-center">
