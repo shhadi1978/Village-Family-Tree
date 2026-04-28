@@ -343,7 +343,11 @@ function FamilyTreePageContent() {
           ) : treeData ? (
             <FamilyTreeVisualization
               treeData={treeData}
-              familyName={family?.name}
+              familyName={
+                treeViewMode === "PERSON_DESCENDANTS" && selectedMemberId
+                  ? getMemberDisplayName(members.find(m => m.id === selectedMemberId) ?? { fullName: family?.name })
+                  : family?.name
+              }
               loading={false}
               focusDescendantsOnly={treeViewMode === "PERSON_DESCENDANTS"}
               onRefresh={() => setTreeReloadTick(prev => prev + 1)}
