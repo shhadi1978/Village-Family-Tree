@@ -3,6 +3,7 @@ import "./globals.css";
 import "reactflow/dist/style.css";
 import PWAInstall from "@/components/PWAInstall";
 import ClerkRootProvider from "@/components/ClerkRootProvider";
+import { ThemeProvider } from "@/components/ThemeProvider";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -36,12 +37,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ar" dir="rtl">
+    <html lang="ar" dir="rtl" suppressHydrationWarning>
       <body>
-        <ClerkRootProvider>
-          {children}
-          <PWAInstall />
-        </ClerkRootProvider>
+        <ThemeProvider>
+          <ClerkRootProvider>
+            {children}
+            <PWAInstall />
+          </ClerkRootProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

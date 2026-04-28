@@ -9,6 +9,7 @@ import { isFamilyFounder } from "@/lib/member-founder";
 import { sortMembersByLineage } from "@/lib/member-lineage-sort";
 import dynamic from "next/dynamic";
 import { ArrowLeft, Home, ChevronUp, ChevronDown, Users } from "lucide-react";
+import ThemeToggle from "@/components/ThemeToggle";
 import Link from "next/link";
 
 type MemberSortMode = "SEQUENCE" | "ALPHABETICAL" | "LINEAGE";
@@ -222,15 +223,15 @@ function FamilyTreePageContent() {
   return (
     <div style={{ height: '100dvh', minHeight: '-webkit-fill-available', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} className="bg-slate-900">
       {/* Header */}
-      <header className="bg-slate-800 border-b border-slate-700 px-4 md:px-6 py-4" style={{ flexShrink: 0 }}>
+      <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 md:px-6 py-4 shadow-sm dark:shadow-none" style={{ flexShrink: 0 }}>
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
           <div className="flex items-center gap-4">
             <Link href="/" className="text-blue-400 hover:text-blue-300">
               <ArrowLeft className="w-5 h-5" />
             </Link>
             <div>
-              <h1 className="text-xl md:text-2xl font-bold text-white">{family.name}</h1>
-              <p className="text-slate-400 text-sm">
+              <h1 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white">{family.name}</h1>
+              <p className="text-slate-500 dark:text-slate-400 text-sm">
                 {formatNumberAr(family.members?.length || 0)} فرد
               </p>
             </div>
@@ -256,29 +257,29 @@ function FamilyTreePageContent() {
         {/* Sidebar */}
         {sidebarOpen && (
         <aside
-          className="w-full h-[40dvh] lg:h-auto lg:w-72 bg-slate-800 lg:border-l border-slate-700 overflow-y-auto"
+          className="w-full h-[40dvh] lg:h-auto lg:w-72 bg-white dark:bg-slate-800 lg:border-l border-slate-200 dark:border-slate-700 overflow-y-auto"
           style={{ flexShrink: 0, maxHeight: '100%' }}
         >
-          <div className="p-4 border-b border-slate-700">
-            <h2 className="font-semibold text-white mb-3">اختر فرداً</h2>
+          <div className="p-4 border-b border-slate-200 dark:border-slate-700">
+            <h2 className="font-semibold text-slate-900 dark:text-white mb-3">اختر فرداً</h2>
             <div className="mb-3">
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="ابحث بالاسم..."
-                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm placeholder-slate-400 focus:outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white text-sm placeholder-slate-400 focus:outline-none focus:border-blue-500"
               />
             </div>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               بدون اختيار شخص: عرض الشجرة الكاملة. عند اختيار شخص: عرض نسله فقط حتى آخر الشجرة.
             </p>
             <div className="mt-3">
-              <label className="block text-xs text-slate-300 mb-1">ترتيب الأفراد</label>
+              <label className="block text-xs text-slate-700 dark:text-slate-300 mb-1">ترتيب الأفراد</label>
               <select
                 value={memberSortMode}
                 onChange={(e) => setMemberSortMode(e.target.value as MemberSortMode)}
-                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm"
+                className="w-full px-3 py-2 bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white text-sm"
               >
                 <option value="SEQUENCE">حسب التسلسل</option>
                 <option value="ALPHABETICAL">حسب الأبجدية</option>
@@ -291,8 +292,8 @@ function FamilyTreePageContent() {
                 onClick={() => { setTreeViewMode("FULL_FAMILY"); setSelectedMemberId(null); }}
                 className={`w-full px-3 py-2 rounded-lg border text-sm transition ${
                   treeViewMode === "FULL_FAMILY"
-                    ? "bg-emerald-600/20 border-emerald-500 text-emerald-100"
-                    : "border-slate-600 text-slate-200 hover:bg-slate-700"
+                    ? "bg-emerald-600/20 border-emerald-500 text-emerald-800 dark:text-emerald-100"
+                    : "border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
                 }`}
               >
                 عرض الشجرة الكاملة للعائلة
@@ -302,7 +303,7 @@ function FamilyTreePageContent() {
               type="button"
               onClick={() => setTreeReloadTick((prev) => prev + 1)}
               disabled={!activeTreeMemberId || treeLoading}
-              className="mt-3 w-full px-3 py-2 rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-700 disabled:opacity-50 text-sm transition"
+              className="mt-3 w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 text-sm transition"
             >
               {treeLoading ? "جاري التحديث..." : "تحديث الشجرة"}
             </button>
@@ -320,12 +321,12 @@ function FamilyTreePageContent() {
                       treeViewMode === "PERSON_DESCENDANTS" && selectedMemberId === member.id
                         ? "bg-blue-600 text-white border-blue-500"
                         : founder
-                          ? "text-amber-100 bg-amber-900/25 border-amber-700 hover:bg-amber-900/35"
-                          : "text-slate-300 border-transparent hover:bg-slate-700"
+                          ? "text-amber-800 dark:text-amber-100 bg-amber-100/60 dark:bg-amber-900/25 border-amber-400 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/35"
+                          : "text-slate-700 dark:text-slate-300 border-transparent hover:bg-slate-100 dark:hover:bg-slate-700"
                     }`}
                   >
                     <div className="font-medium">{getMemberDisplayName(member)}</div>
-                    {founder && <div className="text-[11px] text-amber-300 mt-0.5">مؤسس العائلة</div>}
+                    {founder && <div className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">مؤسس العائلة</div>}
                     {member.gender && (
                       <div className="text-xs opacity-70">
                         {genderLabelAr(member.gender)}

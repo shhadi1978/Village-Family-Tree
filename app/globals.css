@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  color-scheme: dark light;
   --founder-bg: rgba(146, 64, 14, 0.25);
   --founder-bg-hover: rgba(146, 64, 14, 0.35);
   --founder-border: #f59e0b;
@@ -14,6 +14,14 @@
   --founder-avatar-border: #f59e0b;
   --founder-avatar-gradient-start: #f59e0b;
   --founder-avatar-gradient-end: #ca8a04;
+  /* Light mode defaults */
+  --bg-body: #f1f5f9;
+  --text-body: #0f172a;
+}
+
+.dark {
+  --bg-body: #0f172a;
+  --text-body: #e2e8f0;
 }
 
 html,
@@ -21,8 +29,8 @@ body {
   margin: 0;
   min-height: 100%;
   min-height: -webkit-fill-available;
-  background: #0f172a;
-  color: #e2e8f0;
+  background: var(--bg-body);
+  color: var(--text-body);
   font-family: "Tajawal", "Noto Sans Arabic", Arial, Helvetica, sans-serif;
   line-height: 1.6;
   text-align: right;
