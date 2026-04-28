@@ -132,6 +132,7 @@ type TransformOptions = {
   onToggleCollapse?: (memberId: string) => void;
   spouses?: Set<string>;
   spouseLinks?: SpouseLink[];
+  membersWithDescendants?: Set<string>;
 };
 
 type FlowEdge = Edge & {
@@ -561,9 +562,9 @@ function extractMembersAndRelationshipsFromTree(
   root: TreeNodeUI | null,
   collapsedMemberIds: Set<string>,
   focusDescendantsOnly: boolean
-): { members: TreeMemberUI[]; relationships: RawRelationship[]; spouses: Set<string>; spouseLinks: SpouseLink[] } {
+): { members: TreeMemberUI[]; relationships: RawRelationship[]; spouses: Set<string>; spouseLinks: SpouseLink[]; membersWithDescendants: Set<string> } {
   if (!root) {
-    return { members: [], relationships: [], spouses: new Set(), spouseLinks: [] };
+    return { members: [], relationships: [], spouses: new Set(), spouseLinks: [], membersWithDescendants: new Set() };
   }
 
   const memberMap = new Map<string, TreeMemberUI>();
@@ -572,6 +573,9 @@ function extractMembersAndRelationshipsFromTree(
   const relationshipsByChild = new Map<string, Map<string, string[]>>();
   const spousePairs = new Set<string>();
   const spouseLinksMap = new Map<string, SpouseLink>();
+  // Tracks members who have children regardless of collapse state, so the
+  // collapse button remains visible even after the branch is collapsed.
+  const membersWithDescendants = new Set<string>();
 
   const registerSpouseLink = (a: string, b: string) => {
     if (!a || !b || a === b) return;
@@ -607,6 +611,11 @@ function extractMembersAndRelationshipsFromTree(
     if (visitedLineage.has(currentId)) continue;
     visitedLineage.add(currentId);
     registerMember(current);
+    // Determine if this member has children in the ORIGINAL tree (before collapse filtering)
+    const hasAnyChildren =
+      current.children.length > 0 ||
+      current.marriages.some((m) => m.children.length > 0);
+    if (hasAnyChildren) membersWithDescendants.add(currentId);
     if (collapsedMemberIds.has(currentId)) continue;
 
     const marriageParentsByChild = new Map<string, string[]>();
@@ -666,6 +675,7 @@ function extractMembersAndRelationshipsFromTree(
     relationships: normalizedRelationships,
     spouses: spousePairs,
     spouseLinks: Array.from(spouseLinksMap.values()),
+    membersWithDescendants,
   };
 }
 
@@ -683,6 +693,7 @@ function transformDataToElements(
     onToggleCollapse,
     spouses = new Set<string>(),
     spouseLinks = [],
+    membersWithDescendants,
   } = options;
 
   const memberWidth = isCompactMobile
@@ -764,7 +775,7 @@ function transformDataToElements(
       isMobile,
       isCompactMobile,
       isCollapsed: collapsedMemberIds.has(member.id),
-      hasDescendants: descendantParentIds.has(member.id),
+      hasDescendants: (membersWithDescendants ?? descendantParentIds).has(member.id),
       onToggleCollapse,
       layoutRank: (generationByMember.get(member.id) ?? 0) * 2,
     },
@@ -1132,7 +1143,7 @@ function FamilyTreeVisualizationInner({
 
   useEffect(() => {
     if (treeData && !loading) {
-      const { members, relationships, spouses, spouseLinks } = extractMembersAndRelationshipsFromTree(
+      const { members, relationships, spouses, spouseLinks, membersWithDescendants } = extractMembersAndRelationshipsFromTree(
         treeData,
         collapsedMemberIds,
         focusDescendantsOnly
@@ -1150,6 +1161,7 @@ function FamilyTreeVisualizationInner({
           onToggleCollapse: handleToggleCollapse,
           spouses,
           spouseLinks,
+          membersWithDescendants,
         }
       );
 
