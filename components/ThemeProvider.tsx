@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useLayoutEffect, useState } from "react";
 
 type Theme = "dark" | "light";
 
@@ -9,39 +9,37 @@ const ThemeContext = createContext<{
   toggle: () => void;
 }>({ theme: "dark", toggle: () => {} });
 
+function applyTheme(t: Theme) {
+  if (typeof window === "undefined") return;
+  if (t === "dark") {
+    document.documentElement.classList.add("dark");
+  } else {
+    document.documentElement.classList.remove("dark");
+  }
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  // Read initial state directly from the DOM (set synchronously by the inline script
-  // in layout.tsx). Falls back to "dark" during SSR where window is unavailable.
+  // Read from localStorage on first render (most reliable source).
+  // Falls back to DOM class set by the inline script in layout.tsx.
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window === "undefined") return "dark";
+    const saved = localStorage.getItem("theme") as Theme | null;
+    if (saved === "light" || saved === "dark") return saved;
     return document.documentElement.classList.contains("dark") ? "dark" : "light";
   });
 
-  // Sync state with localStorage on mount (handles cases where inline script wasn't present)
-  useEffect(() => {
-    const saved = localStorage.getItem("theme") as Theme | null;
-    const resolved: Theme = saved === "light" ? "light" : "dark";
-    if (resolved !== theme) {
-      setTheme(resolved);
-      applyTheme(resolved);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const applyTheme = (t: Theme) => {
-    const root = document.documentElement;
-    if (t === "dark") {
-      root.classList.add("dark");
-    } else {
-      root.classList.remove("dark");
-    }
-  };
+  // Keep the DOM in sync with state synchronously before every paint.
+  // Using useLayoutEffect with [theme] dependency means this fires after
+  // every render where theme changed — including React Strict Mode's double-invocation.
+  // This makes the toggle reliable in dev mode.
+  useLayoutEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
   const toggle = () => {
     const next: Theme = theme === "dark" ? "light" : "dark";
     setTheme(next);
     localStorage.setItem("theme", next);
-    applyTheme(next);
   };
 
   return (
