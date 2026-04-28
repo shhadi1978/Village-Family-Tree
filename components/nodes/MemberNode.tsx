@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Handle, Position } from "@xyflow/react";
-import { ChevronDown, ChevronUp, User } from "lucide-react";
+import { ChevronDown, ChevronUp, MapPin, User } from "lucide-react";
 import { formatDateAr } from "@/lib/i18n/format";
 import { getMemberDisplayName } from "@/lib/member-display";
 import { isFamilyFounder } from "@/lib/member-founder";
@@ -61,17 +61,22 @@ export default function MemberNode({ data }: MemberNodeProps) {
   const isMale = memberGender === "MALE";
   const isFemale = memberGender === "FEMALE";
 
-  const memberCardTone = isFemale
-    ? "bg-rose-900/20 border-rose-500 hover:border-rose-400"
-    : isMale
-      ? "bg-blue-900/20 border-blue-500 hover:border-blue-400"
-      : "bg-slate-800 border-slate-600 hover:border-blue-500";
+  // External members always get amber tone regardless of gender
+  const memberCardTone = isExternalMember
+    ? "bg-amber-900/20 border-amber-500 hover:border-amber-400"
+    : isFemale
+      ? "bg-rose-900/20 border-rose-500 hover:border-rose-400"
+      : isMale
+        ? "bg-blue-900/20 border-blue-500 hover:border-blue-400"
+        : "bg-slate-800 border-slate-600 hover:border-blue-500";
 
-  const avatarTone = isFemale
-    ? "bg-gradient-to-br from-pink-500 to-rose-500 border-pink-400"
-    : isMale
-      ? "bg-gradient-to-br from-blue-500 to-cyan-500 border-blue-400"
-      : "bg-gradient-to-br from-blue-500 to-purple-500 border-blue-500";
+  const avatarTone = isExternalMember
+    ? "bg-gradient-to-br from-amber-500 to-orange-500 border-amber-400"
+    : isFemale
+      ? "bg-gradient-to-br from-pink-500 to-rose-500 border-pink-400"
+      : isMale
+        ? "bg-gradient-to-br from-blue-500 to-cyan-500 border-blue-400"
+        : "bg-gradient-to-br from-blue-500 to-purple-500 border-blue-500";
 
   const handleNodeClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -95,7 +100,7 @@ export default function MemberNode({ data }: MemberNodeProps) {
     <>
       <div
         onClick={handleNodeClick}
-        className={`rounded-lg p-4 shadow-lg transition border-2 cursor-pointer hover:shadow-xl ${
+        className={`relative rounded-lg p-4 shadow-lg transition border-2 cursor-pointer hover:shadow-xl ${
           isCompactMobile ? "w-36 p-3" : isMobile ? "w-44" : "w-64"
         } ${
           founder ? "founder-node-card" : memberCardTone
@@ -128,11 +133,13 @@ export default function MemberNode({ data }: MemberNodeProps) {
               className={`${isCompactMobile ? "w-10 h-10" : "w-12 h-12"} rounded-full object-cover border-2 ${
                 founder
                   ? "founder-node-border"
-                  : isFemale
-                    ? "border-pink-400"
-                    : isMale
-                      ? "border-blue-400"
-                      : "border-slate-400"
+                  : isExternalMember
+                    ? "border-amber-400"
+                    : isFemale
+                      ? "border-pink-400"
+                      : isMale
+                        ? "border-blue-400"
+                        : "border-slate-400"
               }`}
             />
           ) : (
@@ -159,14 +166,18 @@ export default function MemberNode({ data }: MemberNodeProps) {
         )}
 
         {isExternalMember && (
-          <div className="mt-1 text-center space-y-1">
-            <span className="inline-block px-2 py-0.5 rounded text-[11px] bg-amber-900/60 border border-amber-600 text-amber-200">
-              من خارج القرية
-            </span>
+          <>
+            {/* Corner badge */}
+            <div className="absolute top-2 end-2 flex items-center gap-0.5 rounded-full bg-amber-600/80 px-1.5 py-0.5">
+              <MapPin className="w-2.5 h-2.5 text-amber-100" />
+              {!isCompactMobile && <span className="text-[10px] text-amber-100 leading-none">خارجي</span>}
+            </div>
             {member.externalOriginText && (
-              <p className="text-[11px] text-amber-300/90 line-clamp-1">{member.externalOriginText}</p>
+              <div className="mt-1 text-center">
+                <p className="text-[11px] text-amber-300/90 line-clamp-1">{member.externalOriginText}</p>
+              </div>
             )}
-          </div>
+          </>
         )}
 
         <div className="mt-2 space-y-1 text-xs text-slate-400">
