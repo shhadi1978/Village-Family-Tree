@@ -1323,26 +1323,31 @@ function FamilyTreeVisualizationInner({
       return;
     }
     const matchedIds: string[] = [];
-    setNodes(prev => prev.map(n => {
-      if (isUnionNodeId(n.id)) return n;
-      const m = (n.data as any).member as TreeMemberUI;
-      const nameStr = [m.fullName, m.firstName, m.lastName, m.nickname]
-        .filter(Boolean).join(' ').toLowerCase();
-      const matches = nameStr.includes(q);
-      if (matches) matchedIds.push(n.id);
-      return { ...n, data: { ...n.data, isHighlighted: matches } };
-    }));
-    setSearchMatchCount(matchedIds.length);
-    if (matchedIds.length > 0) {
-      requestAnimationFrame(() => {
+    // Compute matches first, then apply to nodes
+    setNodes(prev => {
+      const updated = prev.map(n => {
+        if (isUnionNodeId(n.id)) return n;
+        const m = (n.data as any).member as TreeMemberUI;
+        const nameStr = [m.fullName, m.firstName, m.lastName, m.nickname]
+          .filter(Boolean).join(' ').toLowerCase();
+        const matches = nameStr.includes(q);
+        if (matches && !matchedIds.includes(n.id)) matchedIds.push(n.id);
+        return { ...n, data: { ...n.data, isHighlighted: matches } };
+      });
+      return updated;
+    });
+    // Delay count update so setNodes callback has run
+    requestAnimationFrame(() => {
+      setSearchMatchCount(matchedIds.length);
+      if (matchedIds.length > 0) {
         fitView({
           nodes: matchedIds.map(id => ({ id })),
           duration: 600,
           padding: 0.5,
           maxZoom: 1.2,
         });
-      });
-    }
+      }
+    });
   }, [searchQuery, fitView, setNodes]);
 
   useEffect(() => {
