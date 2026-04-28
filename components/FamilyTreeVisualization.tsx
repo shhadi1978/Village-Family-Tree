@@ -214,7 +214,7 @@ function getLayoutedElements(inputNodes: Node[], inputEdges: FlowEdge[]) {
   // ─── Pedigree Layout Constants ────────────────────────────────────────────
   const SPOUSE_GAP = 50;   // horizontal gap between the two spouses
   const CHILD_GAP  = 120;  // horizontal gap between adjacent child subtrees
-  const ROW_HEIGHT = 440;  // vertical distance between generations
+  const ROW_HEIGHT = 380;  // vertical distance between generations
 
   // ─── Build family graph ────────────────────────────────────────────────────
   const nodesById = new Map(inputNodes.map(n => [n.id, n]));
@@ -308,7 +308,11 @@ function getLayoutedElements(inputNodes: Node[], inputEdges: FlowEdge[]) {
     const children = childrenByUnion.get(uid) ?? [];
     const parentY  = generation * ROW_HEIGHT;
     const parentH  = parents.length > 0 ? sizeOf(parents[0]).height : LAYOUT_MEMBER_NODE_HEIGHT;
-    const unionY   = parentY + (parentH - LAYOUT_UNION_NODE_HEIGHT) / 2;
+    // For couples: union at vertical center of parents (for horizontal side connections)
+    // For single parent: union just below parent bottom so the edge goes straight down
+    const unionY = parents.length >= 2
+      ? parentY + (parentH - LAYOUT_UNION_NODE_HEIGHT) / 2
+      : parentY + parentH;
 
     positions.set(uid, { x: centerX - LAYOUT_UNION_NODE_WIDTH / 2, y: unionY });
 
@@ -588,12 +592,11 @@ function getLayoutedElements(inputNodes: Node[], inputEdges: FlowEdge[]) {
     const parents = parentsByUnion.get(uid) ?? [];
     if (parents.length !== 1) return;
     const parentPos = positions.get(parents[0]);
-    const existingUnionPos = positions.get(uid);
-    if (!parentPos || !existingUnionPos) return;
+    if (!parentPos) return;
     const ps = sizeOf(parents[0]);
     positions.set(uid, {
       x: parentPos.x + ps.width / 2 - LAYOUT_UNION_NODE_WIDTH / 2,
-      y: existingUnionPos.y,
+      y: parentPos.y + ps.height,  // always just below parent bottom
     });
   });
 
@@ -1041,7 +1044,10 @@ function transformDataToElements(
       const unionId = ensureSingleParentUnionNode(visualParentId);
       const siblingChildIds = singleParentChildIdsByParent.get(visualParentId) ?? [];
       const siblingIndex = Math.max(0, siblingChildIds.findIndex((id) => id === childId));
-      const handleIndex = siblingIndex % fanOutSourceHandles.length;
+      // Use center handles for a single child so the edge is a straight vertical line.
+      // For multiple siblings, fan out handles spread lines across the union width.
+      const singleChild = siblingChildIds.length === 1;
+      const handleIndex = singleChild ? 2 : siblingIndex % fanOutSourceHandles.length;
 
       pushEdge({
         id: `${unionId}->${childId}`,
@@ -1088,19 +1094,22 @@ function transformDataToElements(
         });
       });
 
+      const childList = childIdsByUnionId.get(unionId) ?? [];
+      const childIndex = Math.max(0, childList.findIndex((id) => id === childId));
+      // Use center handles for a single child (straight vertical line).
+      // For multiple siblings, spread lines via sibling handle positions.
+      const coupleSingleChild = childList.length === 1;
+      const handleSet = coupleSingleChild
+        ? siblingHandlesForCouples[2]
+        : siblingHandlesForCouples[childIndex % siblingHandlesForCouples.length];
+
       pushEdge({
         id: `${unionId}->${childId}`,
         source: unionId,
         target: childId,
         type: 'step',
-        sourceHandle: siblingHandlesForCouples[
-          Math.max(0, (childIdsByUnionId.get(unionId) ?? []).findIndex((id) => id === childId)) %
-            siblingHandlesForCouples.length
-        ].source,
-        targetHandle: siblingHandlesForCouples[
-          Math.max(0, (childIdsByUnionId.get(unionId) ?? []).findIndex((id) => id === childId)) %
-            siblingHandlesForCouples.length
-        ].target,
+        sourceHandle: handleSet.source,
+        targetHandle: handleSet.target,
         pathOptions: { borderRadius: 10, offset: 20 },
         weight: 1,
         animated: false,
@@ -1114,7 +1123,9 @@ function transformDataToElements(
     const unionId = ensureSingleParentUnionNode(parentIds[0]);
     const siblingChildIds = singleParentChildIdsByParent.get(parentIds[0]) ?? [];
     const siblingIndex = Math.max(0, siblingChildIds.findIndex((id) => id === childId));
-    const handleIndex = siblingIndex % fanOutSourceHandles.length;
+    // Center handles for single child, fanOut for multiple siblings
+    const isSingleChild = siblingChildIds.length === 1;
+    const handleIndex = isSingleChild ? 2 : siblingIndex % fanOutSourceHandles.length;
 
     pushEdge({
       id: `${unionId}->${childId}`,
