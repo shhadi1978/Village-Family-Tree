@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Background,
   Controls,
@@ -1144,9 +1144,88 @@ function FamilyTreeVisualizationInner({
   const [showDesktopSimplified, setShowDesktopSimplified] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMatchCount, setSearchMatchCount] = useState(0);
+  const [showStats, setShowStats] = useState(false);
   const { fitView } = useReactFlow();
   const denseTreeNodeCount = countTreeNodes(treeData);
   const isDenseTree = denseTreeNodeCount >= DENSE_TREE_NODE_THRESHOLD;
+
+  // ─── Tree Statistics ───────────────────────────────────────────────────────
+  const treeStats = useMemo(() => {
+    if (!treeData) return null;
+    const visited = new Set<string>();
+    const queue: TreeNodeUI[] = [treeData];
+    let totalCount = 0;
+    let maleCount = 0;
+    let femaleCount = 0;
+    let deceasedCount = 0;
+    let externalCount = 0;
+    let maxGeneration = 0;
+    const generationMap = new Map<string, number>();
+    generationMap.set(treeData.member.id, 0);
+    const birthsByDecade = new Map<string, number>();
+
+    while (queue.length > 0) {
+      const node = queue.shift()!;
+      const id = node.member.id;
+      if (visited.has(id)) continue;
+      visited.add(id);
+      totalCount++;
+      const m = node.member;
+      const gender = m.gender ? String(m.gender).toUpperCase() : 'OTHER';
+      if (gender === 'MALE') maleCount++;
+      else if (gender === 'FEMALE') femaleCount++;
+      if (m.dateOfDeath) deceasedCount++;
+      if (m.isExternal || m.externalOriginText) externalCount++;
+      if (m.dateOfBirth) {
+        const yr = new Date(m.dateOfBirth).getFullYear();
+        if (yr > 1700 && yr <= new Date().getFullYear()) {
+          const decade = `${Math.floor(yr / 10) * 10}`;
+          birthsByDecade.set(decade, (birthsByDecade.get(decade) ?? 0) + 1);
+        }
+      }
+      const myGen = generationMap.get(id) ?? 0;
+      if (myGen > maxGeneration) maxGeneration = myGen;
+      node.marriages.forEach(mar => {
+        if (mar.spouse && !visited.has(mar.spouse.member.id)) {
+          generationMap.set(mar.spouse.member.id, myGen);
+          queue.push(mar.spouse);
+        }
+        mar.children.forEach(ch => {
+          if (!visited.has(ch.member.id)) {
+            generationMap.set(ch.member.id, myGen + 1);
+            queue.push(ch);
+          }
+        });
+      });
+      node.children.forEach(ch => {
+        if (!visited.has(ch.member.id)) {
+          generationMap.set(ch.member.id, myGen + 1);
+          queue.push(ch);
+        }
+      });
+      node.spouses.forEach(sp => {
+        if (!visited.has(sp.member.id)) {
+          generationMap.set(sp.member.id, myGen);
+          queue.push(sp);
+        }
+      });
+    }
+
+    const decadesEntries = [...birthsByDecade.entries()]
+      .sort((a, b) => Number(a[0]) - Number(b[0]));
+    const maxBirthsInDecade = Math.max(...decadesEntries.map(([, v]) => v), 1);
+
+    return {
+      totalCount,
+      maleCount,
+      femaleCount,
+      deceasedCount,
+      externalCount,
+      generationsCount: maxGeneration + 1,
+      decadesEntries,
+      maxBirthsInDecade,
+    };
+  }, [treeData]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1394,19 +1473,97 @@ function FamilyTreeVisualizationInner({
           </Panel>
         )}
 
-        {(familyName || onRefresh) && (
-          <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, display: 'flex', alignItems: 'center', gap: 8, borderRadius: 8, background: 'rgba(15,23,42,0.8)', border: '1px solid #334155', padding: '8px 12px', color: '#f1f5f9' }}>
-            {familyName && <span style={{ fontSize: 14, fontWeight: 500 }}>{familyName}</span>}
-            {onRefresh && (
-              <button
-                type="button"
-                onClick={onRefresh}
-                style={{ fontSize: 12, padding: '4px 8px', borderRadius: 4, background: '#334155', color: '#f1f5f9', border: 'none', cursor: 'pointer' }}
-              >
-                تحديث
-              </button>
-            )}
-          </div>
+        {(familyName || onRefresh || treeStats) && (
+          <Panel position="top-right">
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, direction: 'rtl' }}>
+              {/* Family name + refresh + stats toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderRadius: 8, background: 'rgba(15,23,42,0.9)', border: '1px solid #334155', padding: '8px 12px', color: '#f1f5f9' }}>
+                {familyName && <span style={{ fontSize: 14, fontWeight: 600 }}>{familyName}</span>}
+                {onRefresh && (
+                  <button
+                    type="button"
+                    onClick={onRefresh}
+                    style={{ fontSize: 12, padding: '4px 8px', borderRadius: 4, background: '#334155', color: '#f1f5f9', border: 'none', cursor: 'pointer' }}
+                  >
+                    تحديث
+                  </button>
+                )}
+                {treeStats && (
+                  <button
+                    type="button"
+                    onClick={() => setShowStats(s => !s)}
+                    style={{ fontSize: 12, padding: '4px 8px', borderRadius: 4, background: showStats ? '#4f46e5' : '#334155', color: '#f1f5f9', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                    title="إحصاءات الشجرة"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+                    </svg>
+                    إحصاءات
+                  </button>
+                )}
+              </div>
+
+              {/* Stats panel */}
+              {showStats && treeStats && (
+                <div style={{
+                  background: 'rgba(15,23,42,0.96)',
+                  border: '1px solid #334155',
+                  borderRadius: 10,
+                  padding: '14px 16px',
+                  color: '#f1f5f9',
+                  minWidth: 220,
+                  maxWidth: 260,
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                  direction: 'rtl',
+                }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, borderBottom: '1px solid #334155', paddingBottom: 6, color: '#a5b4fc' }}>
+                    إحصاءات الشجرة
+                  </div>
+
+                  {/* Grid of key stats */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px', marginBottom: 12 }}>
+                    {[
+                      { label: 'إجمالي الأفراد', value: treeStats.totalCount, color: '#818cf8' },
+                      { label: 'عدد الأجيال', value: treeStats.generationsCount, color: '#34d399' },
+                      { label: 'الذكور', value: treeStats.maleCount, color: '#60a5fa' },
+                      { label: 'الإناث', value: treeStats.femaleCount, color: '#f472b6' },
+                      { label: 'المتوفون', value: treeStats.deceasedCount, color: '#f87171' },
+                      { label: 'من خارج القرية', value: treeStats.externalCount, color: '#fbbf24' },
+                    ].map(stat => (
+                      <div key={stat.label} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 6, padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <span style={{ fontSize: 18, fontWeight: 700, color: stat.color, lineHeight: 1 }}>{stat.value}</span>
+                        <span style={{ fontSize: 10, color: '#94a3b8', lineHeight: 1.2 }}>{stat.label}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Births by decade bar chart */}
+                  {treeStats.decadesEntries.length > 0 && (
+                    <>
+                      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>المواليد حسب العقد</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {treeStats.decadesEntries.map(([decade, count]) => (
+                          <div key={decade} style={{ display: 'flex', alignItems: 'center', gap: 6, direction: 'ltr' }}>
+                            <span style={{ fontSize: 10, color: '#64748b', width: 36, textAlign: 'right', flexShrink: 0 }}>{decade}s</span>
+                            <div style={{ flex: 1, height: 10, background: 'rgba(255,255,255,0.06)', borderRadius: 4, overflow: 'hidden' }}>
+                              <div style={{
+                                height: '100%',
+                                width: `${Math.round((count / treeStats.maxBirthsInDecade) * 100)}%`,
+                                background: 'linear-gradient(90deg, #6366f1, #818cf8)',
+                                borderRadius: 4,
+                                transition: 'width 0.4s ease',
+                              }} />
+                            </div>
+                            <span style={{ fontSize: 10, color: '#a5b4fc', width: 22, textAlign: 'left', flexShrink: 0 }}>{count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </Panel>
         )}
       </ReactFlow>
     </div>
