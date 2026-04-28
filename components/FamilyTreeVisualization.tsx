@@ -131,6 +131,7 @@ type TransformOptions = {
   isCompactMobile?: boolean;
   collapsedMemberIds?: Set<string>;
   onToggleCollapse?: (memberId: string) => void;
+  onFocusMember?: (memberId: string) => void;
   spouses?: Set<string>;
   spouseLinks?: SpouseLink[];
   membersWithDescendants?: Set<string>;
@@ -609,6 +610,48 @@ function getLayoutedElements(inputNodes: Node[], inputEdges: FlowEdge[]) {
 
   return { nodes, edges: inputEdges };
 }
+
+// Compute IDs of all nodes reachable downward from a root member (subtree).
+// Also includes sibling parents (spouses) connected via the same union node.
+function computeSubtreeIds(rootId: string, allNodes: Node[], allEdges: Edge[]): Set<string> {
+  const visible = new Set<string>();
+  const queue = [rootId];
+
+  // source → targets map (forward traversal)
+  const adj = new Map<string, string[]>();
+  allEdges.forEach(e => {
+    const targets = adj.get(e.source) ?? [];
+    targets.push(e.target);
+    adj.set(e.source, targets);
+  });
+
+  // union → all its parent members (to include the spouse when we reach a union)
+  const unionParents = new Map<string, string[]>();
+  allEdges.forEach(e => {
+    if (isUnionNodeId(e.target) && !isUnionNodeId(e.source)) {
+      const parents = unionParents.get(e.target) ?? [];
+      parents.push(e.source);
+      unionParents.set(e.target, parents);
+    }
+  });
+
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    if (visible.has(id)) continue;
+    visible.add(id);
+    (adj.get(id) ?? []).forEach(target => {
+      if (!visible.has(target)) queue.push(target);
+    });
+    // When we reach a union node, also pull in its other parent (spouse)
+    if (isUnionNodeId(id)) {
+      (unionParents.get(id) ?? []).forEach(parent => {
+        if (!visible.has(parent)) queue.push(parent);
+      });
+    }
+  }
+  return visible;
+}
+
 function extractMembersAndRelationshipsFromTree(
   root: TreeNodeUI | null,
   collapsedMemberIds: Set<string>,
@@ -742,6 +785,7 @@ function transformDataToElements(
     isCompactMobile = false,
     collapsedMemberIds = new Set<string>(),
     onToggleCollapse,
+    onFocusMember,
     spouses = new Set<string>(),
     spouseLinks = [],
     membersWithDescendants,
@@ -828,6 +872,7 @@ function transformDataToElements(
       isCollapsed: collapsedMemberIds.has(member.id),
       hasDescendants: (membersWithDescendants ?? descendantParentIds).has(member.id),
       onToggleCollapse,
+      onFocusMember,
       layoutRank: (generationByMember.get(member.id) ?? 0) * 2,
     },
     sourcePosition: Position.Bottom,
@@ -1145,6 +1190,7 @@ function FamilyTreeVisualizationInner({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMatchCount, setSearchMatchCount] = useState(0);
   const [showStats, setShowStats] = useState(false);
+  const [focusedMemberId, setFocusedMemberId] = useState<string | null>(null);
   const { fitView } = useReactFlow();
   const denseTreeNodeCount = countTreeNodes(treeData);
   const isDenseTree = denseTreeNodeCount >= DENSE_TREE_NODE_THRESHOLD;
@@ -1325,6 +1371,7 @@ function FamilyTreeVisualizationInner({
           isCompactMobile: isNarrowMobile || showDesktopSimplified,
           collapsedMemberIds,
           onToggleCollapse: handleToggleCollapse,
+          onFocusMember: setFocusedMemberId,
           spouses,
           spouseLinks,
           membersWithDescendants,
@@ -1333,8 +1380,23 @@ function FamilyTreeVisualizationInner({
 
       const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(rawNodes, rawEdges);
 
-      setNodes(layoutedNodes);
-      setEdges(layoutedEdges);
+      // Focus mode: show only the focused member's subtree
+      let finalNodes = layoutedNodes;
+      let finalEdges = layoutedEdges;
+      if (focusedMemberId) {
+        const subtreeIds = computeSubtreeIds(focusedMemberId, layoutedNodes, layoutedEdges);
+        finalNodes = layoutedNodes.filter(n => subtreeIds.has(n.id));
+        finalEdges = layoutedEdges.filter(e => subtreeIds.has(e.source) && subtreeIds.has(e.target));
+      }
+
+      setNodes(finalNodes);
+      setEdges(finalEdges);
+
+      if (focusedMemberId) {
+        requestAnimationFrame(() =>
+          fitView({ duration: 700, padding: 0.25, maxZoom: 1.5 })
+        );
+      }
     }
   }, [
     treeData,
@@ -1346,6 +1408,7 @@ function FamilyTreeVisualizationInner({
     isNarrowMobile,
     showDesktopSimplified,
     focusDescendantsOnly,
+    focusedMemberId,
     setNodes,
     setEdges,
   ]);
@@ -1446,6 +1509,24 @@ function FamilyTreeVisualizationInner({
                 direction: 'rtl',
               }}>
                 {searchMatchCount > 0 ? `${searchMatchCount} نتيجة` : 'لا توجد نتائج'}
+              </div>
+            )}
+            {/* Exit focus mode banner */}
+            {focusedMemberId && (
+              <div style={{ marginTop: 6, borderTop: '1px solid #334155', paddingTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', direction: 'rtl', gap: 6 }}>
+                <span style={{ fontSize: 11, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {/* target icon */}
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
+                  </svg>
+                  وضع التركيز
+                </span>
+                <button
+                  onClick={() => setFocusedMemberId(null)}
+                  style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: '#7f1d1d', color: '#fca5a5', border: '1px solid #991b1b', cursor: 'pointer' }}
+                >
+                  خروج
+                </button>
               </div>
             )}
           </div>
