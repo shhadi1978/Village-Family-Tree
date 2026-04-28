@@ -10,14 +10,22 @@ const ThemeContext = createContext<{
 }>({ theme: "dark", toggle: () => {} });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("dark");
+  // Read initial state directly from the DOM (set synchronously by the inline script
+  // in layout.tsx). Falls back to "dark" during SSR where window is unavailable.
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window === "undefined") return "dark";
+    return document.documentElement.classList.contains("dark") ? "dark" : "light";
+  });
 
-  // On mount: read from localStorage or default to dark
+  // Sync state with localStorage on mount (handles cases where inline script wasn't present)
   useEffect(() => {
     const saved = localStorage.getItem("theme") as Theme | null;
     const resolved: Theme = saved === "light" ? "light" : "dark";
-    setTheme(resolved);
-    applyTheme(resolved);
+    if (resolved !== theme) {
+      setTheme(resolved);
+      applyTheme(resolved);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const applyTheme = (t: Theme) => {

@@ -39,6 +39,14 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>
       <body>
+        {/* Apply theme class synchronously before React hydrates to prevent flash and
+            ensure ThemeProvider reads the correct initial state from the DOM. */}
+        <script
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('theme');if(t==='light'){document.documentElement.classList.remove('dark')}else{document.documentElement.classList.add('dark')}}catch(e){document.documentElement.classList.add('dark')}})()`,
+          }}
+        />
         <ThemeProvider>
           <ClerkRootProvider>
             {children}
