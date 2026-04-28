@@ -210,7 +210,7 @@ function compareMemberIdsForSiblingOrder(memberById: Map<string, TreeMemberUI>, 
 function getLayoutedElements(inputNodes: Node[], inputEdges: FlowEdge[]) {
   // ─── Pedigree Layout Constants ────────────────────────────────────────────
   const SPOUSE_GAP = 50;   // horizontal gap between the two spouses
-  const CHILD_GAP  = 80;   // horizontal gap between adjacent child subtrees
+  const CHILD_GAP  = 120;  // horizontal gap between adjacent child subtrees
   const ROW_HEIGHT = 440;  // vertical distance between generations
 
   // ─── Build family graph ────────────────────────────────────────────────────
@@ -427,79 +427,122 @@ function getLayoutedElements(inputNodes: Node[], inputEdges: FlowEdge[]) {
     }
   });
 
-  // ─── Third pass: global couple stabilization (with and without children) ──
-  const spouseOnlyPairs = inputEdges
-    .filter(edge => edge.id.startsWith('spouse-link-'))
-    .filter(edge => !isUnionNodeId(edge.source) && !isUnionNodeId(edge.target));
+  // ─── Third pass: deterministic couple centering around union nodes ─────────
+  // Snap each spouse pair to be exactly SPOUSE_GAP apart, centered on their union dot.
+  // Process deeper generations first so shallow cross-branch unions see their children
+  // already placed before the shallow union gets snapped.
+  const unionsByDepth = [...allUnionIds].sort((a, b) => {
+    const depthOf = (uid: string) => {
+      const ps = parentsByUnion.get(uid) ?? [];
+      return ps.reduce((mx, pid) => {
+        const pos = positions.get(pid);
+        return Math.max(mx, pos ? Math.round(pos.y / ROW_HEIGHT) : 0);
+      }, 0);
+    };
+    return depthOf(b) - depthOf(a); // deepest first
+  });
 
-  const couplePairs = new Map<string, { aId: string; bId: string; anchorUnionId?: string }>();
+  unionsByDepth.forEach(uid => {
+    const parents = parentsByUnion.get(uid) ?? [];
+    if (parents.length < 2) return;
+    const posA = positions.get(parents[0]);
+    const posB = positions.get(parents[1]);
+    const unionPos = positions.get(uid);
+    if (!posA || !posB || !unionPos) return;
+    const sA = sizeOf(parents[0]);
+    const sB = sizeOf(parents[1]);
+    const unionCenterX = unionPos.x + LAYOUT_UNION_NODE_WIDTH / 2;
+    const coupleY = Math.max(posA.y, posB.y);
+    const [leftId, rightId] = posA.x <= posB.x ? [parents[0], parents[1]] : [parents[1], parents[0]];
+    const leftSize = sizeOf(leftId);
+    positions.set(leftId, { x: unionCenterX - SPOUSE_GAP / 2 - leftSize.width, y: coupleY });
+    positions.set(rightId, { x: unionCenterX + SPOUSE_GAP / 2, y: coupleY });
+    positions.set(uid, {
+      x: unionCenterX - LAYOUT_UNION_NODE_WIDTH / 2,
+      y: coupleY + (Math.max(sA.height, sB.height) - LAYOUT_UNION_NODE_HEIGHT) / 2,
+    });
+  });
 
+  // ─── Fourth pass: per-generation overlap resolution (couple-aware atoms) ──
+  // A couple (left spouse + right spouse + union dot) is treated as one indivisible
+  // "atom" that moves together.  Atoms within the same generation row are sorted by
+  // their left edge and then forward-swept so no two atoms overlap.
+  type Atom = { leftX: number; rightX: number; nodeIds: string[] };
+  const atomsByGen = new Map<number, Atom[]>();
+  const assignedToAtom = new Set<string>();
+  const MIN_ATOM_GAP = 30;
+
+  // Couple atoms (two parents + union node)
   allUnionIds.forEach(uid => {
     const parents = parentsByUnion.get(uid) ?? [];
     if (parents.length < 2) return;
-
-    const [aId, bId] = parents.slice(0, 2);
-    const key = [aId, bId].sort((a, b) => a.localeCompare(b)).join('::');
-    if (!couplePairs.has(key)) {
-      couplePairs.set(key, { aId, bId, anchorUnionId: uid });
-    }
-  });
-
-  spouseOnlyPairs.forEach(edge => {
-    const aId = edge.source;
-    const bId = edge.target;
-    const key = [aId, bId].sort((a, b) => a.localeCompare(b)).join('::');
-    if (!couplePairs.has(key)) {
-      couplePairs.set(key, { aId, bId });
-    }
-  });
-
-  // Iterative relaxation avoids brittle one-pass overrides when members participate
-  // in multiple unions or when cross-branch compaction shifts nodes later.
-  for (let iteration = 0; iteration < 6; iteration += 1) {
-    couplePairs.forEach(pair => {
-      const posA = positions.get(pair.aId);
-      const posB = positions.get(pair.bId);
-      if (!posA || !posB) return;
-
-      const sizeA = sizeOf(pair.aId);
-      const sizeB = sizeOf(pair.bId);
-
-      const centerAX = posA.x + sizeA.width / 2;
-      const centerBX = posB.x + sizeB.width / 2;
-      const coupleY = Math.max(posA.y, posB.y);
-
-      const [leftId, rightId] = centerAX <= centerBX ? [pair.aId, pair.bId] : [pair.bId, pair.aId];
-      const leftSize = sizeOf(leftId);
-      const rightSize = sizeOf(rightId);
-
-      const anchorUnionPos = pair.anchorUnionId ? positions.get(pair.anchorUnionId) : undefined;
-      const desiredCenterX = anchorUnionPos
-        ? anchorUnionPos.x + LAYOUT_UNION_NODE_WIDTH / 2
-        : (centerAX + centerBX) / 2;
-
-      const leftTargetX = desiredCenterX - SPOUSE_GAP / 2 - leftSize.width;
-      const rightTargetX = desiredCenterX + SPOUSE_GAP / 2;
-
-      const leftCurrentX = positions.get(leftId)?.x ?? leftTargetX;
-      const rightCurrentX = positions.get(rightId)?.x ?? rightTargetX;
-
-      const blend = 0.65;
-      const leftNextX = leftCurrentX + (leftTargetX - leftCurrentX) * blend;
-      const rightNextX = rightCurrentX + (rightTargetX - rightCurrentX) * blend;
-
-      positions.set(leftId, { x: leftNextX, y: coupleY });
-      positions.set(rightId, { x: rightNextX, y: coupleY });
-
-      if (pair.anchorUnionId) {
-        const coupleHeight = Math.max(sizeA.height, sizeB.height);
-        positions.set(pair.anchorUnionId, {
-          x: desiredCenterX - LAYOUT_UNION_NODE_WIDTH / 2,
-          y: coupleY + (coupleHeight - LAYOUT_UNION_NODE_HEIGHT) / 2,
-        });
-      }
+    // If either parent already belongs to a prior atom, skip to avoid double-counting.
+    if (assignedToAtom.has(parents[0]) || assignedToAtom.has(parents[1])) return;
+    const posA = positions.get(parents[0]);
+    const posB = positions.get(parents[1]);
+    if (!posA || !posB) return;
+    const gen = Math.round(Math.min(posA.y, posB.y) / ROW_HEIGHT);
+    const [leftId, rightId] = posA.x <= posB.x ? [parents[0], parents[1]] : [parents[1], parents[0]];
+    const leftPos = positions.get(leftId)!;
+    const rightPos = positions.get(rightId)!;
+    if (!atomsByGen.has(gen)) atomsByGen.set(gen, []);
+    atomsByGen.get(gen)!.push({
+      leftX: leftPos.x,
+      rightX: rightPos.x + sizeOf(rightId).width,
+      nodeIds: [leftId, rightId, uid],
     });
-  }
+    assignedToAtom.add(parents[0]);
+    assignedToAtom.add(parents[1]);
+  });
+
+  // Solo-member atoms (leaf nodes, single-parent children, etc.)
+  inputNodes.forEach(n => {
+    if (isUnionNodeId(n.id) || assignedToAtom.has(n.id)) return;
+    const pos = positions.get(n.id);
+    if (!pos) return;
+    const gen = Math.round(pos.y / ROW_HEIGHT);
+    if (!atomsByGen.has(gen)) atomsByGen.set(gen, []);
+    atomsByGen.get(gen)!.push({
+      leftX: pos.x,
+      rightX: pos.x + sizeOf(n.id).width,
+      nodeIds: [n.id],
+    });
+  });
+
+  // Forward sweep per generation: push overlapping atoms apart
+  atomsByGen.forEach(atoms => {
+    if (atoms.length < 2) return;
+    atoms.sort((a, b) => a.leftX - b.leftX);
+    let rightBound = atoms[0].rightX;
+    for (let i = 1; i < atoms.length; i++) {
+      const atom = atoms[i];
+      const needed = rightBound + MIN_ATOM_GAP;
+      if (atom.leftX < needed) {
+        const delta = needed - atom.leftX;
+        atom.nodeIds.forEach(id => {
+          const pos = positions.get(id);
+          if (pos) positions.set(id, { x: pos.x + delta, y: pos.y });
+        });
+        atom.leftX += delta;
+        atom.rightX += delta;
+      }
+      rightBound = atom.rightX;
+    }
+  });
+
+  // Re-anchor single-parent union nodes if their parent was shifted by atom sweep
+  allUnionIds.forEach(uid => {
+    const parents = parentsByUnion.get(uid) ?? [];
+    if (parents.length !== 1) return;
+    const parentPos = positions.get(parents[0]);
+    const existingUnionPos = positions.get(uid);
+    if (!parentPos || !existingUnionPos) return;
+    const ps = sizeOf(parents[0]);
+    positions.set(uid, {
+      x: parentPos.x + ps.width / 2 - LAYOUT_UNION_NODE_WIDTH / 2,
+      y: existingUnionPos.y,
+    });
+  });
 
   // ─── Fallback for any unpositioned node ───────────────────────────────────
   inputNodes.forEach(n => {
