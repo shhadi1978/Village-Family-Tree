@@ -1288,20 +1288,29 @@ function FamilyTreeVisualizationInner({
     const landscapeQuery = window.matchMedia('(max-width: 960px) and (orientation: landscape) and (max-height: 520px)');
 
     const syncLayoutMode = () => {
-      setIsMobile(widthQuery.matches);
-      setIsNarrowMobile(narrowWidthQuery.matches);
-      setIsLandscapeMobile(landscapeQuery.matches);
+      // Re-evaluate queries at call time (most reliable on orientation change)
+      setIsMobile(window.matchMedia('(max-width: 767px)').matches);
+      setIsNarrowMobile(window.matchMedia('(max-width: 430px)').matches);
+      setIsLandscapeMobile(
+        window.matchMedia('(max-width: 960px) and (orientation: landscape) and (max-height: 520px)').matches
+      );
     };
 
     syncLayoutMode();
+    // matchMedia change events (desktop / some Android)
     widthQuery.addEventListener('change', syncLayoutMode);
     narrowWidthQuery.addEventListener('change', syncLayoutMode);
     landscapeQuery.addEventListener('change', syncLayoutMode);
+    // resize + orientationchange: more reliable on iOS Safari
+    window.addEventListener('resize', syncLayoutMode);
+    window.addEventListener('orientationchange', syncLayoutMode);
 
     return () => {
       widthQuery.removeEventListener('change', syncLayoutMode);
       narrowWidthQuery.removeEventListener('change', syncLayoutMode);
       landscapeQuery.removeEventListener('change', syncLayoutMode);
+      window.removeEventListener('resize', syncLayoutMode);
+      window.removeEventListener('orientationchange', syncLayoutMode);
     };
   }, []);
 

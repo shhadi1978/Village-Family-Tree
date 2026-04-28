@@ -220,7 +220,7 @@ function FamilyTreePageContent() {
   }
 
   return (
-    <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} className="bg-slate-900">
+    <div style={{ height: '100dvh', minHeight: '-webkit-fill-available', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} className="bg-slate-900">
       {/* Header */}
       <header className="bg-slate-800 border-b border-slate-700 px-4 md:px-6 py-4" style={{ flexShrink: 0 }}>
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
